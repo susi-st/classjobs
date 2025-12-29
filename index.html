@@ -191,7 +191,7 @@
                     
                     const uniqueRoleTypes = [...new Set(ROLE_ORDER.map(r => normalizeRole(r)))];
                     const currentPrefs = userResponse.preferences || [];
-                    setAvailableRoles(uniqueRoleTypes.filter(r => !currentPrefs.includes(r)));
+                    setAvailableRoles(uniqueRoleTypes.filter(r => !(userResponse.preferences || []).includes(r)));
                 });
                 return () => unsub();
             }, [user, userResponse.preferences, editList.length]);
@@ -203,6 +203,11 @@
                 });
                 return () => unsub();
             }, [user]);
+
+            // --- 特殊篩選：依座號排序的名單 (供教師進度頁面使用) ---
+            const officersSortedBySeat = useMemo(() => {
+                return [...officers].sort((a, b) => Number(a.seatNo) - Number(b.seatNo));
+            }, [officers]);
 
             const statistics = useMemo(() => {
                 let incompleteEval = 0;
@@ -244,6 +249,7 @@
                 const stats = {};
                 const uniqueRoleTypes = [...new Set(ROLE_ORDER.map(r => normalizeRole(r)))];
                 uniqueRoleTypes.forEach(role => stats[role] = []);
+
                 allStudentResponses.forEach(resp => {
                     const prefs = resp.preferences || [];
                     prefs.forEach((role, idx) => {
@@ -360,6 +366,7 @@
 
             return (
                 <div className="min-h-screen pb-10">
+                    {/* 彈窗 */}
                     {modal.show && (
                         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-[100] p-4 text-center">
                             <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-sm w-full border-4 border-white overflow-hidden">
@@ -487,9 +494,10 @@
                                                 });
                                                 await batch.commit(); 
                                                 setEditList([]);
+                                                setAdminTab('progress'); // 儲存完立即切換至依座號排列的進度畫面
                                                 setIsActionLoading(false); 
-                                                alert("儲存成功並已自動排序職務順序。");
-                                            }} className="w-full bg-[#B5EAD7] text-emerald-800 py-5 rounded-3xl font-black shadow-lg mt-4">{isActionLoading ? '儲存中...' : '儲存名單並排序'}</button>
+                                                alert("儲存成功。名單已自動正規化並重新排序。");
+                                            }} className="w-full bg-[#B5EAD7] text-emerald-800 py-5 rounded-3xl font-black shadow-lg mt-4">{isActionLoading ? '儲存中...' : '儲存名單並切換檢視'}</button>
                                         </div>
                                     )}
                                     
@@ -497,7 +505,7 @@
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-left font-bold text-sm border-separate border-spacing-y-2">
                                                 <thead><tr className="text-slate-400 text-[10px] uppercase tracking-widest font-black"><th className="py-2 pl-4 w-20 text-center">座號</th><th>姓名</th><th className="text-center">填答狀態</th><th className="text-right pr-4">最後同步</th></tr></thead>
-                                                <tbody>{officers.map(student => {
+                                                <tbody>{officersSortedBySeat.map(student => {
                                                     const resp = allStudentResponses.find(r => r.name === student.name);
                                                     const hasEval = resp && Object.keys(resp.evaluations || {}).length >= officers.length;
                                                     const hasPref = resp && (resp.preferences || []).filter(p => p).length >= 5;
