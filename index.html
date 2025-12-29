@@ -87,7 +87,8 @@
             const [availableRoles, setAvailableRoles] = useState([]);
             const [draggedItem, setDraggedItem] = useState(null);
             const [isActionLoading, setIsActionLoading] = useState(false);
-            const [volunteerRankFilter, setVolunteerRankFilter] = useState(1);
+            
+            const [topNFilter, setTopNFilter] = useState(3);
 
             useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
@@ -155,6 +156,7 @@
                     });
                     setOfficers(data);
                     if (editList.length === 0) setEditList(data);
+                    
                     const uniqueRoles = [...new Set(data.map(o => o.role.replace(/\d+$/, '')))];
                     setAvailableRoles(uniqueRoles.filter(r => !(userResponse.preferences || []).includes(r)));
                 });
@@ -185,18 +187,23 @@
 
             const volunteerStats = useMemo(() => {
                 const stats = {};
-                const uniqueRoles = [...new Set(officers.map(o => o.role.replace(/\d+$/, '')))];
+                const uniqueRoles = [...new Set(ROLE_ORDER)]; 
                 uniqueRoles.forEach(role => stats[role] = []);
+
                 allStudentResponses.forEach(resp => {
                     const prefs = resp.preferences || [];
                     prefs.forEach((role, idx) => {
                         if (role && stats[role] !== undefined) {
-                            stats[role].push({ name: resp.name, seatNo: resp.seatNo, rank: idx + 1 });
+                            stats[role].push({ 
+                                name: resp.name, 
+                                seatNo: resp.seatNo, 
+                                rank: idx + 1 
+                            });
                         }
                     });
                 });
                 return stats;
-            }, [allStudentResponses, officers]);
+            }, [allStudentResponses]);
 
             const handleGoogleLogin = async (entrance) => {
                 setTargetEntrance(entrance);
@@ -236,77 +243,41 @@
                 setDraggedItem(null);
             };
 
-            // --- 檢核功能 ---
-            const checkEvalCompletion = () => {
+            const handleEvalNext = () => {
                 const ratedCount = Object.keys(userResponse.evaluations).length;
                 if (ratedCount < officers.length) {
-                    setModal({
-                        show: true,
-                        title: '評分未完成',
-                        message: '評分未完成，請完成所有幹部的評分再按下一步。',
-                        type: 'error'
-                    });
-                    return false;
+                    setModal({ show: true, title: '評分未完成', message: '評分未完成，請完成所有幹部的評分再按下一步。', type: 'error' });
+                    return;
                 }
-                return true;
-            };
-
-            const handleEvalNext = () => {
-                if (checkEvalCompletion()) {
-                    setStep('pref');
-                }
+                setStep('pref');
             };
 
             const handleFinalSubmitCheck = () => {
                 const prefs = userResponse.preferences;
-                
-                // 1. 志願序缺漏檢查 (往前替補檢查)
                 for (let i = 0; i < prefs.length; i++) {
                     if (!prefs[i]) {
-                        // 檢查後方是否有值
                         const hasValueAfter = prefs.slice(i + 1).some(p => p !== null);
                         if (hasValueAfter) {
-                            setModal({
-                                show: true,
-                                title: '志願序有誤',
-                                message: `第 ${i + 1} 志願不可留白，請往前替補。`,
-                                type: 'error'
-                            });
+                            setModal({ show: true, title: '志願序有誤', message: `第 ${i + 1} 志願不可留白，請往前替補。`, type: 'error' });
                             return;
                         }
                     }
                 }
-
-                // 2. 數量檢查
                 const filledCount = prefs.filter(p => p).length;
                 if (filledCount < 5) {
-                    setModal({
-                        show: true,
-                        title: '志願數量不足',
-                        message: '請至少選填前 5 名志願！',
-                        type: 'error'
-                    });
+                    setModal({ show: true, title: '志願數量不足', message: '請至少選填前 5 名志願！', type: 'error' });
                     return;
                 }
-
-                // 3. 通過後進行確認儲存
-                setModal({ 
-                    show: true, 
-                    title: '確認送出', 
-                    message: '您填寫的評分與志願將同步至雲端庫。確定要送出嗎？', 
-                    type: 'info', 
-                    onConfirm: saveToDB 
-                });
+                setModal({ show: true, title: '確認送出', message: '確定要儲存目前的紀錄嗎？', type: 'info', onConfirm: saveToDB });
             };
 
             if (loading) return <div className="min-h-screen flex items-center justify-center bg-[#FFFAF0] text-[#8799E8] font-black animate-pulse text-lg">系統載入中...</div>;
 
             return (
                 <div className="min-h-screen pb-10">
-                    {/* 彈窗 */}
                     {modal.show && (
-                        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-                            <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-sm w-full border-4 border-white overflow-hidden text-center">
+                        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-[100] p-4 text-center">
+                            <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-sm w-full border-4 border-white overflow-hidden">
                                 <div className="p-8">
                                     <h3 className={`text-2xl font-black mb-2 ${modal.type === 'error' ? 'text-rose-500' : 'text-slate-800'}`}>{modal.title}</h3>
                                     <p className="text-slate-500 font-bold">{modal.message}</p>
@@ -326,7 +297,7 @@
                             <h1 className="text-xl sm:text-2xl font-black text-[#8799E8] flex items-center gap-2">❤️ 班級幹部票選系統</h1>
                             {user && (
                                 <div className="flex items-center gap-4">
-                                    {userData && <span className={`px-4 py-1.5 rounded-full text-sm font-black border-2 border-white shadow-sm ${userData.isTeacher ? 'bg-orange-100 text-orange-600' : 'bg-lime-100 text-lime-700'}`}>{userData.isTeacher ? '教師模式' : `${userData.seatNo} 號 ${userData.name}`}</span>}
+                                    {userData && <span className={`px-4 py-1.5 rounded-full text-sm font-black border-2 border-white shadow-sm ${userData.isTeacher ? 'bg-orange-100 text-orange-600' : 'bg-lime-100 text-lime-700'}`}>{userData.isTeacher ? '教師指導模式' : `${userData.seatNo} 號 ${userData.name}`}</span>}
                                     {user.email === TEACHER_EMAIL && step !== 'admin' && <button onClick={() => setStep('admin')} className="bg-[#B5EAD7] text-emerald-800 font-black px-4 py-2 rounded-full text-xs shadow-sm">管理</button>}
                                     <button onClick={handleLogout} className="text-slate-400 font-bold px-4 py-2 bg-white rounded-full border border-slate-100 text-sm">登出</button>
                                 </div>
@@ -349,7 +320,7 @@
                         )}
 
                         {step === 'admin' && (
-                            <div className="space-y-6">
+                            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
                                 <div className="flex flex-wrap gap-2">
                                     {['list', 'progress', 'ratings', 'volunteers'].map(t => (
                                         <button key={t} onClick={() => setAdminTab(t)} className={`px-6 py-3 rounded-2xl font-black text-xs sm:text-sm transition ${adminTab === t ? 'bg-[#C7CEEA] text-white shadow-md' : 'bg-white text-slate-400'}`}>
@@ -394,6 +365,7 @@
                                             }} className="w-full bg-[#B5EAD7] text-emerald-800 py-5 rounded-3xl font-black shadow-lg mt-4">{isActionLoading ? '儲存中...' : '儲存名單並排序'}</button>
                                         </div>
                                     )}
+
                                     {adminTab === 'progress' && (
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-left font-bold text-sm border-separate border-spacing-y-2">
@@ -414,6 +386,7 @@
                                             </table>
                                         </div>
                                     )}
+
                                     {adminTab === 'ratings' && (
                                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                             {officers.map(off => {
@@ -427,19 +400,50 @@
                                             })}
                                         </div>
                                     )}
+
                                     {adminTab === 'volunteers' && (
-                                        <div className="space-y-8">
+                                        <div className="space-y-8 animate-in fade-in">
                                             <div className="flex flex-col sm:flex-row justify-between items-center bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2 border-white gap-4">
-                                                <div><h4 className="font-black text-slate-700 text-lg">志願序即時篩選</h4><p className="text-[10px] text-slate-400 font-bold italic">目前顯示：第 {volunteerRankFilter} 志願</p></div>
-                                                <div className="flex gap-3">{[1, 2, 3, 4, 5].map(rank => (<button key={rank} onClick={() => setVolunteerRankFilter(rank)} className={`w-12 h-12 rounded-2xl font-black text-sm transition-all shadow-sm ${volunteerRankFilter === rank ? 'bg-[#C7CEEA] text-white scale-110' : 'bg-white text-slate-300 border border-slate-100'}`}>{rank}</button>))}</div>
+                                                <div>
+                                                    <h4 className="font-black text-slate-700 text-lg">志願統計篩選功能</h4>
+                                                    <p className="text-[10px] text-slate-400 font-bold italic">顯示「列入前 {topNFilter} 志願」的學生名單</p>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    {[1, 2, 3, 4, 5].map(rank => (
+                                                        <button 
+                                                            key={rank} 
+                                                            onClick={() => setTopNFilter(rank)}
+                                                            className={`w-12 h-12 rounded-2xl font-black text-sm transition-all shadow-sm flex flex-col items-center justify-center ${topNFilter === rank ? 'bg-indigo-500 text-white scale-110 shadow-lg' : 'bg-white text-slate-300 border border-slate-100 hover:text-slate-500'}`}
+                                                        >
+                                                            <span className="text-[8px] opacity-60">前</span>{rank}
+                                                        </button>
+                                                    ))}
+                                                </div>
                                             </div>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-sm">
-                                                {Object.entries(volunteerStats).map(([role, list]) => {
-                                                    const filtered = list.filter(s => s.rank === volunteerRankFilter);
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+                                                {ROLE_ORDER.map(role => {
+                                                    const list = volunteerStats[role] || [];
+                                                    const filtered = list
+                                                        .filter(s => s.rank <= topNFilter)
+                                                        .sort((a,b) => a.rank - b.rank || Number(a.seatNo) - Number(b.seatNo));
+                                                        
                                                     return (
-                                                        <div key={role} className="bg-slate-50 p-6 rounded-[2.5rem] border-2 border-white flex flex-col min-h-[160px]"><div className="font-black text-slate-600 mb-4 flex justify-between items-center border-b border-white pb-2">{role}<span className="text-[10px] text-indigo-400 bg-white px-3 py-1 rounded-full shadow-inner">{filtered.length} 人</span></div>
-                                                            <div className="space-y-2 flex-1">{filtered.map((s, i) => (<div key={i} className="bg-white p-3 rounded-2xl text-xs font-black flex justify-between items-center shadow-sm border border-slate-50"><div className="flex items-center gap-2"><span className="text-[10px] text-slate-300">#{s.seatNo}</span><span className="text-slate-700">{s.name}</span></div></div>))}
-                                                                {filtered.length === 0 && <div className="text-slate-200 italic py-10 text-center text-[10px] font-black">無人選擇</div>}
+                                                        <div key={role} className="bg-slate-50 p-5 rounded-[2rem] border-2 border-white flex flex-col min-h-[140px] hover:shadow-md transition-shadow">
+                                                            <div className="font-black text-slate-600 mb-3 flex justify-between items-center border-b border-white pb-2 text-lg">
+                                                                {role}
+                                                                <span className="text-[10px] text-indigo-500 bg-white px-3 py-1 rounded-full shadow-inner font-black">{filtered.length}</span>
+                                                            </div>
+                                                            <div className="flex flex-wrap gap-2 flex-1 items-start">
+                                                                {filtered.map((s, i) => (
+                                                                    <div key={i} className="bg-white px-3 py-1.5 rounded-xl text-xs font-black shadow-sm border border-slate-50 flex items-center gap-1.5 transition-transform hover:scale-105">
+                                                                        <span className="text-[9px] text-slate-300 font-medium">#{s.seatNo}</span>
+                                                                        <span className="text-slate-700">
+                                                                            {s.name}<span className={`ml-0.5 ${s.rank === 1 ? 'text-rose-400' : 'text-indigo-400'}`}>({s.rank})</span>
+                                                                        </span>
+                                                                    </div>
+                                                                ))}
+                                                                {filtered.length === 0 && <div className="text-slate-200 italic py-6 text-center text-[10px] font-bold w-full">暫無候選人</div>}
                                                             </div>
                                                         </div>
                                                     );
@@ -466,7 +470,7 @@
                                                     </div>
                                                 </div>
                                                 <div className="flex-1 overflow-hidden">
-                                                    <div className="flex items-stretch rounded-[1.2rem] overflow-x-auto no-scrollbar border-2 border-white shadow-lg min-h-[60px] bg-white">
+                                                    <div className="flex items-stretch rounded-[1.2rem] overflow-x-auto no-scrollbar border-2 border-white shadow-lg min-h-[70px] bg-white">
                                                         {RATING_OPTIONS.map((opt) => {
                                                             const isSelected = userResponse.evaluations?.[off.id] === opt.val;
                                                             return (
@@ -486,7 +490,7 @@
                                     </div>
                                 </div>
                                 <div className="flex justify-end mb-24 px-4">
-                                    <button onClick={handleEvalNext} className="bg-[#B5EAD7] text-emerald-800 font-black py-6 px-20 rounded-full shadow-2xl border-4 border-white text-xl">下一步：志願排序</button>
+                                    <button onClick={handleEvalNext} className="bg-[#B5EAD7] text-emerald-800 font-black py-6 px-20 rounded-full shadow-2xl border-4 border-white text-xl hover:scale-105 active:scale-95 transition-transform">下一步：志願排序</button>
                                 </div>
                             </div>
                         )}
@@ -498,7 +502,7 @@
                                         <h3 className="text-xl font-black text-[#8799E8] mb-6 font-black">可選職務</h3>
                                         <div className="flex flex-wrap gap-3 p-6 bg-[#FFFAF0] rounded-[2.5rem] min-h-[200px] border-2 border-dashed border-slate-100" onDragOver={(e)=>e.preventDefault()} onDrop={(e)=>handleDrop(e,'pool')}>
                                             {availableRoles.map(r => (
-                                                <div key={r} draggable onDragStart={(e)=>setDraggedItem({type:'pool',value:r})} className="bg-white border-2 border-[#C7CEEA] px-6 py-3 rounded-2xl font-black text-base text-[#8799E8] cursor-grab shadow-sm active:scale-95 transition flex items-center"><span className="mr-3 opacity-30">⠿</span> {r}</div>
+                                                <div key={r} draggable onDragStart={(e)=>setDraggedItem({type:'pool',value:r})} className="bg-white border-2 border-[#C7CEEA] px-6 py-3 rounded-2xl font-black text-base text-[#8799E8] cursor-grab shadow-sm active:scale-95 transition flex items-center hover:border-indigo-400"><span className="mr-3 opacity-30">⠿</span> {r}</div>
                                             ))}
                                             {availableRoles.length === 0 && <div className="text-slate-300 italic py-10 w-full font-black">職務已全數排入</div>}
                                         </div>
@@ -507,29 +511,29 @@
                                         <h3 className="text-2xl font-black mb-8 text-center text-slate-800">下學期志願排序 (前 5 名必填)</h3>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                                             {userResponse.preferences.map((p, i) => (
-                                                <div key={i} onDragOver={(e)=>e.preventDefault()} onDrop={(e)=>handleDrop(e,'slot',i)} className={`flex items-center gap-5 p-6 rounded-[2.5rem] border-2 transition-all ${i < 5 ? 'bg-lime-50/50 border-lime-200' : 'bg-[#FFFAF0] border-transparent'}`}>
+                                                <div key={i} onDragOver={(e)=>e.preventDefault()} onDrop={(e)=>handleDrop(e,'slot',i)} className={`flex items-center gap-5 p-6 rounded-[2.5rem] border-2 transition-all ${i < 5 ? 'bg-lime-50/50 border-lime-200 shadow-sm' : 'bg-[#FFFAF0] border-transparent'}`}>
                                                     <div className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-white shrink-0 shadow-lg text-lg ${i < 5 ? 'bg-emerald-400' : 'bg-indigo-300'}`}>{i + 1}</div>
                                                     <div className="flex-1 min-h-[60px] flex items-center">
-                                                        {p ? <div draggable onDragStart={(e)=>setDraggedItem({type:'slot',value:p,index:i})} className="bg-white border-2 border-[#C7CEEA] px-6 py-4 rounded-[1.5rem] font-black text-xl text-[#8799E8] cursor-grab shadow-md w-full flex justify-between items-center"><span>{p}</span><span className="opacity-20">⠿</span></div> : <span className="text-slate-200 font-bold italic ml-3">拖曳至此</span>}
+                                                        {p ? <div draggable onDragStart={(e)=>setDraggedItem({type:'slot',value:p,index:i})} className="bg-white border-2 border-[#C7CEEA] px-6 py-4 rounded-[1.5rem] font-black text-xl text-[#8799E8] cursor-grab shadow-md w-full flex justify-between items-center animate-in zoom-in"><span>{p}</span><span className="opacity-20">⠿</span></div> : <span className="text-slate-200 font-bold italic ml-3">拖曳至此</span>}
                                                     </div>
                                                 </div>
                                             ))}
                                         </div>
                                     </div>
                                 </div>
-                                <div className="flex justify-between mt-16 mb-24 px-4">
-                                    <button onClick={() => setStep('eval')} className="text-[#C7CEEA] font-black underline text-lg">← 修改評分</button>
-                                    <button onClick={handleFinalSubmitCheck} className="bg-[#B5EAD7] text-emerald-800 font-black py-6 px-20 rounded-full shadow-2xl border-4 border-white text-xl">確認儲存並送出</button>
+                                <div className="flex justify-between mt-16 mb-24 px-4 text-center items-center">
+                                    <button onClick={() => setStep('eval')} className="text-[#C7CEEA] font-black underline text-lg hover:text-indigo-400 transition-colors">← 修改評分</button>
+                                    <button onClick={handleFinalSubmitCheck} className="bg-[#B5EAD7] text-emerald-800 font-black py-6 px-20 rounded-full shadow-2xl border-4 border-white text-xl hover:scale-105 transition-transform active:scale-95">確認儲存並送出</button>
                                 </div>
                             </div>
                         )}
 
                         {step === 'waiting' && (
-                            <div className="text-center pt-10">
-                                <div className="bg-white p-20 rounded-[5rem] shadow-2xl border-4 border-white max-w-2xl mx-auto animate-in zoom-in">
+                            <div className="text-center pt-10 animate-in zoom-in">
+                                <div className="bg-white p-20 rounded-[5rem] shadow-2xl border-4 border-white max-w-2xl mx-auto">
                                     <div className="text-7xl mb-8">✨</div><h2 className="text-4xl font-black text-slate-800 mb-8">填寫完成！</h2>
-                                    <p className="text-slate-500 font-bold mb-12 text-lg"> Hi {user?.displayName}，感謝您的回饋。系統已同步您的選擇。 </p>
-                                    <button onClick={() => setStep('eval')} className="bg-[#FFFAF0] text-[#C7CEEA] font-black py-4 px-12 rounded-full border-2 border-[#C7CEEA]/20 hover:bg-[#C7CEEA] hover:text-white transition-all">返回檢視填答</button>
+                                    <p className="text-slate-500 font-bold mb-12 text-lg"> Hi {user?.displayName}，感謝您的回饋。<br/>系統已同步您的選擇。在票選結束前，您仍可以重新登入修改。 </p>
+                                    <button onClick={() => setStep('eval')} className="bg-[#FFFAF0] text-[#C7CEEA] font-black py-4 px-12 rounded-full border-2 border-[#C7CEEA]/20 hover:bg-[#C7CEEA] hover:text-white transition-all shadow-sm">返回檢視填答</button>
                                 </div>
                             </div>
                         )}
@@ -537,8 +541,8 @@
                         {step === 'unauthorized' && (
                             <div className="bg-white p-10 rounded-[4rem] shadow-sm border-4 border-white max-w-md mx-auto mt-10 text-center animate-in zoom-in">
                                 <div className="text-5xl mb-6">🚫</div><h2 className="text-3xl font-black text-rose-400 mb-4">比對失敗</h2>
-                                <p className="text-slate-400 font-bold mb-8">您的 Google 名稱「{user?.displayName}」不在幹部名單中。</p>
-                                <button onClick={handleLogout} className="w-full bg-slate-100 py-5 rounded-[2.5rem] font-black text-slate-400">更換帳號</button>
+                                <p className="text-slate-400 font-bold mb-8">您的 Google 名稱「{user?.displayName}」不在目前的幹部名單中。</p>
+                                <button onClick={handleLogout} className="w-full bg-slate-100 py-5 rounded-[2.5rem] font-black text-slate-400 hover:bg-slate-200 transition-colors">更換帳號</button>
                             </div>
                         )}
                     </main>
