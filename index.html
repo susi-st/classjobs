@@ -236,23 +236,86 @@
                 setDraggedItem(null);
             };
 
+            // --- 檢核功能 ---
+            const checkEvalCompletion = () => {
+                const ratedCount = Object.keys(userResponse.evaluations).length;
+                if (ratedCount < officers.length) {
+                    setModal({
+                        show: true,
+                        title: '評分未完成',
+                        message: '評分未完成，請完成所有幹部的評分再按下一步。',
+                        type: 'error'
+                    });
+                    return false;
+                }
+                return true;
+            };
+
+            const handleEvalNext = () => {
+                if (checkEvalCompletion()) {
+                    setStep('pref');
+                }
+            };
+
+            const handleFinalSubmitCheck = () => {
+                const prefs = userResponse.preferences;
+                
+                // 1. 志願序缺漏檢查 (往前替補檢查)
+                for (let i = 0; i < prefs.length; i++) {
+                    if (!prefs[i]) {
+                        // 檢查後方是否有值
+                        const hasValueAfter = prefs.slice(i + 1).some(p => p !== null);
+                        if (hasValueAfter) {
+                            setModal({
+                                show: true,
+                                title: '志願序有誤',
+                                message: `第 ${i + 1} 志願不可留白，請往前替補。`,
+                                type: 'error'
+                            });
+                            return;
+                        }
+                    }
+                }
+
+                // 2. 數量檢查
+                const filledCount = prefs.filter(p => p).length;
+                if (filledCount < 5) {
+                    setModal({
+                        show: true,
+                        title: '志願數量不足',
+                        message: '請至少選填前 5 名志願！',
+                        type: 'error'
+                    });
+                    return;
+                }
+
+                // 3. 通過後進行確認儲存
+                setModal({ 
+                    show: true, 
+                    title: '確認送出', 
+                    message: '您填寫的評分與志願將同步至雲端庫。確定要送出嗎？', 
+                    type: 'info', 
+                    onConfirm: saveToDB 
+                });
+            };
+
             if (loading) return <div className="min-h-screen flex items-center justify-center bg-[#FFFAF0] text-[#8799E8] font-black animate-pulse text-lg">系統載入中...</div>;
 
             return (
                 <div className="min-h-screen pb-10">
-                    {/* 彈窗 UI */}
+                    {/* 彈窗 */}
                     {modal.show && (
                         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
                             <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-sm w-full border-4 border-white overflow-hidden text-center">
                                 <div className="p-8">
-                                    <h3 className="text-2xl font-black mb-2">{modal.title}</h3>
+                                    <h3 className={`text-2xl font-black mb-2 ${modal.type === 'error' ? 'text-rose-500' : 'text-slate-800'}`}>{modal.title}</h3>
                                     <p className="text-slate-500 font-bold">{modal.message}</p>
                                 </div>
                                 <div className="p-6 pt-0 flex gap-3">
                                     {modal.onConfirm ? (
                                         <><button onClick={() => setModal({show:false})} className="flex-1 py-4 bg-slate-100 text-slate-400 font-black rounded-3xl">取消</button>
                                           <button onClick={modal.onConfirm} className="flex-1 py-4 bg-[#B5EAD7] text-emerald-800 font-black rounded-3xl">確定</button></>
-                                    ) : <button onClick={() => setModal({show:false})} className="w-full py-4 bg-[#C7CEEA] text-white font-black rounded-3xl">知道了</button>}
+                                    ) : <button onClick={() => setModal({show:false})} className={`w-full py-4 text-white font-black rounded-3xl ${modal.type === 'error' ? 'bg-rose-400' : 'bg-[#C7CEEA]'}`}>知道了</button>}
                                 </div>
                             </div>
                         </div>
@@ -272,7 +335,6 @@
                     </header>
 
                     <main className="max-w-7xl mx-auto p-4 mt-8">
-                        {/* 登入介面 */}
                         {step === 'login' && (
                             <div className="flex flex-col md:flex-row gap-8 justify-center items-stretch mt-10 px-4">
                                 <div className="login-card flex-1 bg-white p-10 rounded-[4rem] shadow-xl border-t-8 border-[#C7CEEA] text-center flex flex-col justify-between max-w-sm">
@@ -395,19 +457,14 @@
                                     <h2 className="text-3xl font-black mb-10 text-center text-[#8799E8]">⭐ 幹部表現與評價</h2>
                                     <div className="space-y-6">
                                         {officers.map(off => (
-                                            <div key={off.id} className="flex flex-col xl:flex-row gap-2 p-3 rounded-[2.5rem] border-2 border-slate-50 hover:border-slate-100 hover:bg-white transition-all duration-300">
-                                                {/* 職務資訊 - 寬度縮小，減少間距 */}
+                                            <div key={off.id} className="flex flex-col xl:flex-row gap-4 p-4 rounded-[2.5rem] border-2 border-slate-50 hover:border-slate-100 hover:bg-white transition-all duration-300">
                                                 <div className="flex flex-col justify-center xl:w-40 shrink-0">
-                                                    <h3 className="font-black text-2xl text-indigo-700 tracking-tight leading-tight">
-                                                        {off.role}
-                                                    </h3>
+                                                    <h3 className="font-black text-2xl text-indigo-700 tracking-tight leading-tight">{off.role}</h3>
                                                     <div className="flex items-center gap-1.5 text-slate-500 font-bold mt-0.5">
                                                         <span className="text-base">{off.name}</span>
                                                         <span className="text-[10px] opacity-40">#{off.seatNo}</span>
                                                     </div>
                                                 </div>
-                                                
-                                                {/* 遊戲血條 - 文字間距與外距縮小 */}
                                                 <div className="flex-1 overflow-hidden">
                                                     <div className="flex items-stretch rounded-[1.2rem] overflow-x-auto no-scrollbar border-2 border-white shadow-lg min-h-[60px] bg-white">
                                                         {RATING_OPTIONS.map((opt) => {
@@ -416,11 +473,9 @@
                                                                 <button 
                                                                     key={opt.val} 
                                                                     onClick={() => setUserResponse({...userResponse, evaluations: {...userResponse.evaluations, [off.id]: opt.val}})}
-                                                                    className={`health-segment flex-none flex items-center justify-center px-4 border-r border-white/20 last:border-r-0 ${isSelected ? `${opt.activeColor} ${opt.activeText} scale-[1.01] z-10 shadow-inner` : `${opt.color} ${opt.textColor} opacity-60 hover:opacity-100`}`}
+                                                                    className={`health-segment flex-none flex items-center justify-center px-6 border-r border-white/20 last:border-r-0 ${isSelected ? `${opt.activeColor} ${opt.activeText} scale-[1.01] z-10 shadow-inner` : `${opt.color} ${opt.textColor} opacity-60 hover:opacity-100`}`}
                                                                 >
-                                                                    <span className="text-sm sm:text-base font-black tracking-tight">
-                                                                        {opt.label}
-                                                                    </span>
+                                                                    <span className="text-sm sm:text-base font-black tracking-tight">{opt.label}</span>
                                                                 </button>
                                                             );
                                                         })}
@@ -431,7 +486,7 @@
                                     </div>
                                 </div>
                                 <div className="flex justify-end mb-24 px-4">
-                                    <button onClick={() => setStep('pref')} className="bg-[#B5EAD7] text-emerald-800 font-black py-6 px-20 rounded-full shadow-2xl border-4 border-white text-xl">下一步：志願排序</button>
+                                    <button onClick={handleEvalNext} className="bg-[#B5EAD7] text-emerald-800 font-black py-6 px-20 rounded-full shadow-2xl border-4 border-white text-xl">下一步：志願排序</button>
                                 </div>
                             </div>
                         )}
@@ -464,11 +519,7 @@
                                 </div>
                                 <div className="flex justify-between mt-16 mb-24 px-4">
                                     <button onClick={() => setStep('eval')} className="text-[#C7CEEA] font-black underline text-lg">← 修改評分</button>
-                                    <button onClick={() => {
-                                        const filled = userResponse.preferences.filter(p=>p);
-                                        if (filled.length < 5) { alert("請至少選填前 5 名志願！"); return; }
-                                        setModal({ show: true, title: '確認送出', message: '您填寫的評分與志願將同步至雲端庫。', type: 'info', onConfirm: saveToDB });
-                                    }} className="bg-[#B5EAD7] text-emerald-800 font-black py-6 px-20 rounded-full shadow-2xl border-4 border-white text-xl">確認儲存並送出</button>
+                                    <button onClick={handleFinalSubmitCheck} className="bg-[#B5EAD7] text-emerald-800 font-black py-6 px-20 rounded-full shadow-2xl border-4 border-white text-xl">確認儲存並送出</button>
                                 </div>
                             </div>
                         )}
