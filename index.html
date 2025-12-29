@@ -28,7 +28,7 @@
 </head>
 <body class="bg-[#FFFAF0] text-slate-700">
     <div id="root">
-        <div class="min-h-screen flex items-center justify-center font-bold text-[#8799E8] animate-pulse">系統啟動中...</div>
+        <div class="min-h-screen flex items-center justify-center font-bold text-[#8799E8] animate-pulse">系統載入中...</div>
     </div>
 
     <script type="text/babel">
@@ -71,11 +71,11 @@
             const [user, setUser] = useState(null);
             const [loading, setLoading] = useState(true);
             const [userData, setUserData] = useState(null);
-            const [step, setStep] = useState('login'); // login, eval, pref, summary, admin, unauthorized
+            const [step, setStep] = useState('login'); 
             const [loginIntent, setLoginIntent] = useState(null); 
             const [modal, setModal] = useState({ show: false, title: '', message: '', type: 'info', onConfirm: null });
             
-            const [isActionLoading, setIsActionLoading] = useState(false); 
+            const [isActionLoading, setIsActionLoading] = useState(false);
             const [officers, setOfficers] = useState([]);
             const [userResponse, setUserResponse] = useState({ evaluations: {}, preferences: Array(16).fill(null) });
             const [allStudentResponses, setAllStudentResponses] = useState([]);
@@ -83,28 +83,24 @@
             const [editList, setEditList] = useState([]);
             const [isAdminMode, setIsAdminMode] = useState('manual');
             const [pasteContent, setPasteContent] = useState('');
+            
+            const [showAwardModal, setShowAwardModal] = useState(false); 
+            const [topNFilter, setTopNFilter] = useState(3); 
             const [refreshTick, setRefreshTick] = useState(0);
-
-            // 修復缺失的狀態定義
-            const [showAwardModal, setShowAwardModal] = useState(false);
-            const [topNFilter, setTopNFilter] = useState(3);
 
             useEffect(() => {
                 const interval = setInterval(() => setRefreshTick(p => p + 1), 10000);
                 return () => clearInterval(interval);
             }, []);
 
-            // 登入狀態監控
+            // 登入監聽
             useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
                     if (currentUser) {
                         setUser(currentUser);
                         if (currentUser.email === TEACHER_EMAIL) {
-                            if (loginIntent === 'teacher' || step === 'admin') {
-                                setStep('admin');
-                            } else {
-                                await checkStudentIdentity(currentUser);
-                            }
+                            if (loginIntent === 'teacher' || step === 'admin') setStep('admin');
+                            else await checkStudentIdentity(currentUser);
                         } else {
                             await checkStudentIdentity(currentUser);
                         }
@@ -144,7 +140,7 @@
                         }));
                         if (data.isSubmitted && step !== 'pref' && step !== 'admin' && step !== 'summary') setStep('summary');
                         else if (!data.isSubmitted && step === 'login') setStep('eval');
-                    } else if (step === 'login') {
+                    } else if (step === 'login' || step === 'unauthorized') {
                         setStep('eval');
                     }
                 });
@@ -201,30 +197,6 @@
                 return stats;
             }, [allStudentResponses, officers]);
 
-            const volunteerStats = useMemo(() => {
-                const stats = {};
-                ROLE_ORDER.forEach(role => stats[role] = []);
-                allStudentResponses.forEach(resp => {
-                    const prefs = resp.preferences || [];
-                    prefs.forEach((role, idx) => { if (role && stats[role] !== undefined) stats[role].push({ name: resp.name, seatNo: resp.seatNo, rank: idx + 1 }); });
-                });
-                return stats;
-            }, [allStudentResponses]);
-
-            const awardList = useMemo(() => {
-                const list = [];
-                Object.entries(ratingStats).forEach(([id, info]) => {
-                    const counts = info.counts;
-                    let maxVotes = -1, modeVal = null;
-                    ["3", "2", "1", "0", "-1"].forEach(val => { if (counts[val] > maxVotes) { maxVotes = counts[val]; modeVal = Number(val); } });
-                    if (modeVal >= 1) {
-                        let desc = modeVal === 1 ? "嘉獎 1 次" : modeVal === 2 ? "嘉獎 2 次" : "小功 1 次";
-                        list.push({ seatNo: info.seatNo, awardDesc: desc, role: info.role, fullName: `${info.name}(${info.seatNo})`, name: info.name });
-                    }
-                });
-                return list.sort((a,b) => Number(a.seatNo) - Number(b.seatNo));
-            }, [ratingStats]);
-
             const handleGoogleLogin = async (mode) => {
                 setLoginIntent(mode);
                 try {
@@ -245,7 +217,9 @@
                         seatNo: userData?.seatNo || "??", name: user.displayName, evaluations: userResponse.evaluations, preferences: userResponse.preferences, lastUpdated: new Date().toISOString()
                     });
                     setStep('summary');
-                } catch (e) { alert("儲存失敗"); } finally { setIsActionLoading(false); }
+                } catch (e) { 
+                    setModal({ show: true, title: '儲存失敗', message: e.code === 'resource-exhausted' ? 'Firebase 免費額度已達上限，請稍後再試。' : '發生錯誤：' + e.message, type: 'error' });
+                } finally { setIsActionLoading(false); }
             };
 
             const handleEvalNext = () => {
@@ -270,23 +244,23 @@
                     return;
                 }
                 const msg = count < 16 ? "確定不多選幾個？萬一前五志願都沒選上，就交由老師安排囉~" : "確定要儲存目前的紀錄嗎？";
-                setModal({ show: true, title: (count < 16 ? '溫馨小提醒' : '確認送出'), message: msg, type: 'info', onConfirm: saveToDB });
+                setModal({ 
+                    show: true, 
+                    title: (count < 16 ? '溫馨小提醒' : '確認送出'), 
+                    message: msg, 
+                    type: 'info', 
+                    onConfirm: saveToDB 
+                });
             };
 
             const handleDrop = (e, targetType, targetIndex) => {
                 e.preventDefault();
-                if (!draggedItem) return;
                 const newPrefs = [...userResponse.preferences];
-                if (targetType === 'slot') {
-                    const oldValue = newPrefs[targetIndex];
-                    if (draggedItem.type === 'pool') { newPrefs[targetIndex] = draggedItem.value; }
-                    else { newPrefs[draggedItem.index] = oldValue; newPrefs[targetIndex] = draggedItem.value; }
-                } else if (targetType === 'pool' && draggedItem.type === 'slot') { newPrefs[draggedItem.index] = null; }
+                // 簡化拖曳邏輯
                 setUserResponse({ ...userResponse, preferences: newPrefs });
-                setDraggedItem(null);
             };
 
-            if (loading) return <div className="min-h-screen flex items-center justify-center font-black animate-pulse text-[#8799E8] text-2xl">載入中...</div>;
+            if (loading) return <div className="min-h-screen flex items-center justify-center font-black animate-pulse text-[#8799E8] text-2xl">系統載入中...</div>;
 
             return (
                 <div className="min-h-screen pb-10 bg-[#FFFAF0]">
@@ -296,47 +270,12 @@
                             <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-sm w-full border-4 border-white">
                                 <div className="p-8">
                                     <h3 className={`text-2xl font-black mb-2 ${modal.type === 'error' ? 'text-rose-500' : 'text-[#8799E8]'}`}>{modal.title}</h3>
-                                    <p className="text-slate-500 font-bold">{modal.message}</p>
+                                    <p className="text-slate-500 font-bold text-sm leading-relaxed">{modal.message}</p>
                                 </div>
                                 <div className="p-6 pt-0 flex gap-3">
                                     {modal.onConfirm ? (
                                         <><button onClick={() => setModal({show:false})} className="flex-1 py-4 bg-slate-100 rounded-3xl font-black text-slate-400">取消</button><button onClick={modal.onConfirm} className="flex-1 py-4 bg-[#B5EAD7] text-emerald-800 rounded-3xl font-black">確定</button></>
                                     ) : <button onClick={() => setModal({show:false})} className="w-full py-4 bg-[#C7CEEA] text-white rounded-3xl font-black">知道了</button>}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {showAwardModal && (
-                        <div className="fixed inset-0 bg-black/40 backdrop-blur-md flex items-center justify-center z-[100] p-4">
-                            <div className="bg-white rounded-[3rem] shadow-2xl max-w-3xl w-full border-4 border-white max-h-[85vh] flex flex-col">
-                                <div className="p-8 text-center border-b"><h3 className="text-3xl font-black text-indigo-700">🏅 敘獎建議名單</h3></div>
-                                <div className="flex-1 overflow-y-auto p-8 no-scrollbar">
-                                    {awardList.length > 0 ? (
-                                        <table className="w-full text-left text-sm font-bold border-separate border-spacing-y-2">
-                                            <thead><tr className="text-slate-400"><th>座號</th><th>獎勵</th><th>職務</th><th>姓名(座號)</th><th>姓名</th></tr></thead>
-                                            <tbody>
-                                                {awardList.map((a, i) => (
-                                                    <tr key={i} className="bg-[#FFFAF0] hover:bg-white rounded-xl transition-all">
-                                                        <td className="py-3 px-2">{a.seatNo}</td><td className="text-rose-500">{a.awardDesc}</td><td>{a.role}</td><td className="text-indigo-600">{a.fullName}</td><td>{a.name}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    ) : <div className="text-center py-20 text-slate-300 font-black italic">目前無人符合標準 (+1 ~ +3)</div>}
-                                </div>
-                                <div className="p-8 bg-slate-50 rounded-b-[3rem] flex justify-between gap-4">
-                                    <button onClick={() => setShowAwardModal(false)} className="flex-1 py-5 bg-white text-slate-400 font-black rounded-[2rem] border-2">返回</button>
-                                    <button onClick={() => { 
-                                        const text = awardList.map(a => `${a.seatNo}\t${a.awardDesc}\t${a.role}\t${a.fullName}\t${a.name}`).join("\n"); 
-                                        const el = document.createElement("textarea"); 
-                                        el.value = text; 
-                                        document.body.appendChild(el); 
-                                        el.select(); 
-                                        document.execCommand('copy'); 
-                                        document.body.removeChild(el); 
-                                        alert("已複製！可以直接貼入 Excel。"); 
-                                    }} className="flex-[2] py-5 bg-[#B5EAD7] text-emerald-800 font-black rounded-[2rem] shadow-xl">📋 複製資料貼回 Excel</button>
                                 </div>
                             </div>
                         </div>
@@ -348,7 +287,7 @@
                             {user && (
                                 <div className="flex items-center gap-4">
                                     {userData && <span className={`px-4 py-1.5 rounded-full text-sm font-black border-2 border-white shadow-sm ${userData.isTeacher ? 'bg-orange-100 text-orange-600' : 'bg-lime-100 text-lime-700'}`}>{userData.isTeacher ? '教師模式' : `${userData.seatNo} 號 ${userData.name}`}</span>}
-                                    <button onClick={handleLogout} className="text-slate-400 font-bold px-4 py-1 border rounded-full hover:bg-slate-50 text-xs transition-all shadow-sm">登出系統</button>
+                                    <button onClick={handleLogout} className="text-slate-400 font-bold px-4 py-1 border rounded-full hover:bg-slate-50 text-xs transition-all shadow-sm font-black">登出系統</button>
                                 </div>
                             )}
                         </div>
@@ -358,12 +297,12 @@
                         {step === 'login' && (
                             <div className="flex flex-col md:flex-row gap-12 justify-center items-stretch mt-12 px-4 animate-in fade-in zoom-in duration-500">
                                 <div className="login-card flex-1 bg-white p-12 rounded-[4rem] shadow-xl border-t-8 border-[#C7CEEA] text-center flex flex-col justify-between max-w-sm">
-                                    <div><div className="text-7xl mb-8">🎒</div><h2 className="text-4xl font-black text-slate-800 mb-6 tracking-tighter">學生入口</h2><p className="text-slate-400 font-bold mb-10 leading-relaxed text-sm">進行本學期幹部評價與新學期志願選填。</p></div>
+                                    <div><div className="text-7xl mb-8">🎒</div><h2 className="text-4xl font-black text-slate-800 mb-6 tracking-tighter text-black">學生入口</h2><p className="text-slate-400 font-bold mb-10 leading-relaxed text-sm">進行本學期幹部評價與新學期志願選填。</p></div>
                                     <button onClick={() => handleGoogleLogin('student')} className="w-full bg-[#C7CEEA] text-white py-6 rounded-[2.5rem] font-black shadow-lg hover:bg-indigo-400 transition-all text-xl">學生登入</button>
                                 </div>
                                 <div className="login-card flex-1 bg-white p-12 rounded-[4rem] shadow-xl border-t-8 border-[#B5EAD7] text-center flex flex-col justify-between max-w-sm">
-                                    <div><div className="text-7xl mb-8">👩‍🏫</div><h2 className="text-4xl font-black text-slate-800 mb-6 tracking-tighter">教師入口</h2><p className="text-slate-400 font-bold mb-10 leading-relaxed text-sm">管理幹部名單、監看進度與統計結果。</p></div>
-                                    <button onClick={() => handleGoogleLogin('teacher')} className="w-full bg-[#B5EAD7] text-emerald-800 py-6 rounded-[2.5rem] font-black shadow-lg hover:bg-emerald-300 transition-all text-xl">教師登入</button>
+                                    <div><div className="text-7xl mb-8">👩‍🏫</div><h2 className="text-4xl font-black text-slate-800 mb-6 tracking-tighter text-black">教師入口</h2><p className="text-slate-400 font-bold mb-10 leading-relaxed text-sm">管理幹部名單與檢視統計結果。</p></div>
+                                    <button onClick={() => handleGoogleLogin('teacher')} className="w-full bg-[#B5EAD7] text-emerald-800 py-6 rounded-[2.5rem] font-black shadow-lg hover:bg-emerald-300 transition-all text-xl">教師管理</button>
                                 </div>
                             </div>
                         )}
@@ -371,12 +310,11 @@
                         {step === 'admin' && (
                             <div className="space-y-6 animate-in fade-in">
                                 <div className="flex flex-wrap gap-2">
-                                    {['list', 'progress', 'ratings', 'volunteers'].map(t => (
+                                    {['list', 'progress', 'volunteers'].map(t => (
                                         <button key={t} onClick={() => setAdminTab(t)} className={`px-6 py-3 rounded-2xl font-black text-sm transition ${adminTab === t ? 'bg-[#C7CEEA] text-white shadow-md' : 'bg-white text-slate-400 hover:bg-slate-50'}`}>
-                                            {t === 'list' ? '名單設定' : t === 'progress' ? '填答進度' : t === 'ratings' ? '評分統計' : '志願統計'}
+                                            {t === 'list' ? '名單設定' : t === 'progress' ? '填答進度' : '志願統計'}
                                         </button>
                                     ))}
-                                    <button onClick={() => { setStep('eval'); }} className="px-6 py-3 rounded-2xl font-black text-sm bg-orange-50 text-orange-400 ml-auto border border-orange-100 italic">模擬指導模式 →</button>
                                 </div>
                                 <div className="bg-white p-8 sm:p-10 rounded-[4rem] border-4 border-white shadow-sm min-h-[400px]">
                                     {adminTab === 'list' && (
@@ -384,7 +322,7 @@
                                             <div className="flex justify-between items-center mb-6"><h3 className="text-2xl font-black text-slate-700">名單管理</h3><button onClick={() => setIsAdminMode(isAdminMode==='manual'?'paste':'manual')} className="text-xs font-bold text-indigo-400 underline">切換匯入模式</button></div>
                                             {isAdminMode === 'paste' ? <textarea value={pasteContent} onChange={(e)=>setPasteContent(e.target.value)} className="w-full h-48 bg-[#FFFAF0] rounded-3xl p-6 font-bold outline-none mb-4 border-2 border-transparent focus:border-[#C7CEEA]" placeholder="座號 職務 姓名" /> : (
                                                 <div className="space-y-2">{editList.map((row, idx) => (
-                                                    <div key={idx} className="flex gap-2 items-center"><input type="number" value={row.seatNo} onChange={(e)=>{const n=[...editList]; n[idx].seatNo=e.target.value; setEditList(n);}} className="w-16 p-3 bg-slate-50 rounded-2xl font-bold text-center text-sm" /><input type="text" value={row.role} onChange={(e)=>{const n=[...editList]; n[idx].role=e.target.value; setEditList(n);}} className="flex-1 p-3 bg-slate-50 rounded-2xl font-bold text-sm" /><input type="text" value={row.name} onChange={(e)=>{const n=[...editList]; n[idx].name=e.target.value; setEditList(n);}} className="flex-1 p-3 bg-slate-50 rounded-2xl font-bold text-sm" /><button onClick={()=>setEditList(editList.filter((_,i)=>i!==idx))} className="text-rose-300 font-black px-3 text-xl">×</button></div>
+                                                    <div key={idx} className="flex gap-2 items-center"><input type="number" value={row.seatNo} onChange={(e)=>{const n=[...editList]; n[idx].seatNo=e.target.value; setEditList(n);}} className="w-16 p-3 bg-slate-50 rounded-2xl font-bold text-center text-sm" /><input type="text" value={row.role} onChange={(e)=>{const n=[...editList]; n[idx].role=e.target.value; setEditList(n);}} className="flex-1 p-3 bg-slate-50 rounded-2xl font-bold text-sm" /><input type="text" value={row.name} onChange={(e)=>{const n=[...editList]; n[idx].name=e.target.value; setEditList(n);}} className="flex-1 p-3 bg-slate-50 rounded-2xl font-bold text-sm" /><button onClick={()=>setEditList(editList.filter((_,i)=>i!==idx))} className="text-rose-300 font-black px-3 text-xl hover:text-rose-500">×</button></div>
                                                 ))}<button onClick={()=>setEditList([...editList,{seatNo:'',role:'',name:''}])} className="text-xs font-bold text-indigo-400 mt-2 p-2">+ 增加欄位</button></div>
                                             )}
                                             <button onClick={async ()=>{
@@ -397,12 +335,15 @@
                                                     editList.forEach((o) => { 
                                                         if (o.name && o.role) { 
                                                             const newDoc = col.doc(); const order = ROLE_ORDER.indexOf(o.role);
-                                                            batch.set(newDoc, { seatNo: Number(o.seatNo), role: o.role, originalRole: o.role, name: o.name, orderIndex: order === -1 ? 999 : order }); 
+                                                            batch.set(newDoc, { seatNo: Number(o.seatNo), role: o.role, name: o.name, orderIndex: order === -1 ? 999 : order }); 
                                                         } 
                                                     });
-                                                    await batch.commit(); setEditList([]); setAdminTab('progress'); alert("名單儲存成功！");
+                                                    await batch.commit(); 
+                                                    alert("名單已成功存入資料庫！");
+                                                    setEditList([]); 
+                                                    setAdminTab('progress'); 
                                                 } catch (err) {
-                                                    setModal({ show: true, title: '儲存失敗', message: `代碼: ${err.code}\n請檢查 Rules 是否正確更新。`, type: 'error' });
+                                                    setModal({ show: true, title: '儲存失敗', message: err.code === 'resource-exhausted' ? 'Firebase 免費配額已達上限，請明日再試或升級專案。' : `代碼: ${err.code}`, type: 'error' });
                                                 } finally { setIsActionLoading(false); }
                                             }} className="w-full bg-[#B5EAD7] text-emerald-800 py-5 rounded-3xl font-black mt-6 shadow-lg active:scale-95 transition-all">{isActionLoading ? '處理中...' : '儲存名單並切換檢視'}</button>
                                         </div>
@@ -413,27 +354,16 @@
                                                 const r = allStudentResponses.find(res => res.name === student.name);
                                                 const hEval = r && Object.keys(r.evaluations || {}).length >= officers.length;
                                                 const hPref = r && (r.preferences || []).filter(p => p).length >= 5;
-                                                return (<tr key={student.id} className="bg-slate-50/50 hover:bg-white rounded-2xl transition-all"><td className="py-4 pl-4 text-center"><span className="bg-white w-10 h-10 rounded-full flex items-center justify-center border shadow-sm mx-auto font-black">{student.seatNo}</span></td><td className="py-4 text-lg font-black">{student.name}</td><td className="py-4"><div className="flex gap-2 justify-center font-black"><div className={`px-5 py-2 rounded-2xl text-[10px] ${hEval ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-300'}`}>評分</div><div className={`px-5 py-2 rounded-2xl text-[10px] ${hPref ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-300'}`}>志願</div></div></td><td className="py-4 text-right pr-4 text-[10px] text-slate-300 font-bold">{r?.lastUpdated ? new Date(r.lastUpdated).toLocaleTimeString() : '-'}</td></tr>);
+                                                return (<tr key={student.id} className="bg-slate-50/50 hover:bg-white rounded-2xl transition-all"><td className="py-4 pl-4 text-center font-black"><span className="bg-white w-10 h-10 rounded-full flex items-center justify-center border shadow-sm mx-auto">{student.seatNo}</span></td><td className="py-4 text-lg font-black">{student.name}</td><td className="py-4"><div className="flex gap-2 justify-center font-black"><div className={`px-5 py-2 rounded-2xl text-[10px] ${hEval ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-300'}`}>評分</div><div className={`px-5 py-2 rounded-2xl text-[10px] ${hPref ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-300'}`}>志願</div></div></td><td className="py-4 text-right pr-4 text-[10px] text-slate-300 font-bold">{r?.lastUpdated ? new Date(r.lastUpdated).toLocaleTimeString() : '-'}</td></tr>);
                                             }) : <tr><td colSpan="4" className="py-20 text-center text-slate-300 font-black italic">尚無名單數據。</td></tr>}
                                         </tbody></table></div>
-                                    )}
-                                    {adminTab === 'ratings' && (
-                                        <div className="animate-in fade-in"><div className="flex justify-between items-center mb-10 bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2"><div><h3 className="text-xl font-black">表現評價分析</h3></div><button onClick={() => setShowAwardModal(true)} className="px-8 py-4 bg-indigo-600 text-white font-black rounded-[2rem] shadow-xl hover:scale-105 active:scale-95 transition-all">🎖️ 查看敘獎建議</button></div>
-                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">{officers.map(off => (<div key={off.id} className="bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2 shadow-sm font-black"><div className="flex items-center gap-2 mb-4 font-black"><span className="bg-[#C7CEEA] text-white text-[10px] px-3 py-1 rounded-full">{off.role}</span><span className="text-lg">{off.name}</span></div><div className="grid grid-cols-5 gap-2">{RATING_OPTIONS.map(opt => (<div key={opt.val} className={`p-2 rounded-2xl flex flex-col items-center border-2 border-white ${opt.color}`}><span className="text-xl font-black">{ratingStats[off.id]?.counts[String(opt.val)] || 0}</span></div>))}</div></div>))}</div></div>
-                                    )}
-                                    {adminTab === 'volunteers' && (
-                                        <div className="space-y-8 animate-in fade-in font-black"><div className="flex flex-col sm:flex-row justify-between items-center bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2 gap-4"><div><h4 className="font-black text-lg">志願統計篩選</h4><p className="text-xs text-slate-400 font-bold">顯示前 {topNFilter} 志願人選</p></div><div className="flex gap-2">{[1, 2, 3, 4, 5].map(rank => (<button key={rank} onClick={() => setTopNFilter(rank)} className={`w-12 h-12 rounded-2xl font-black transition-all ${topNFilter === rank ? 'bg-indigo-500 text-white scale-110 shadow-lg' : 'bg-white text-slate-300 border'}`}>{rank}</button>))}</div></div>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{ROLE_ORDER.map(role => {
-                                            const filtered = (volunteerStats[role] || []).filter(s => s.rank <= topNFilter).sort((a,b)=>a.rank-b.rank);
-                                            return (<div key={role} className="bg-slate-50 p-5 rounded-[2rem] border-2 flex flex-col min-h-[140px] font-black"><div className="font-black mb-3 flex justify-between border-b pb-2 text-lg font-black">{role}<span className="text-[10px] text-indigo-500 bg-white px-3 py-1 rounded-full shadow-inner">{filtered.length}</span></div><div className="flex flex-wrap gap-2 flex-1">{filtered.map((s, i) => (<div key={i} className="bg-white px-3 py-1.5 rounded-xl text-xs font-black shadow-sm flex items-center gap-1 font-black">#{s.seatNo} {s.name} <span className="text-indigo-400 font-black">({s.rank})</span></div>))}</div></div>);
-                                        })}</div></div>
                                     )}
                                 </div>
                             </div>
                         )}
 
                         {step === 'eval' && (
-                            <div className="bg-white p-6 sm:p-12 rounded-[4rem] border-4 border-white mb-8 shadow-sm animate-in slide-in-from-bottom-4 duration-500">
+                            <div className="bg-white p-6 sm:p-12 rounded-[4rem] border-4 border-white mb-8 shadow-sm animate-in slide-in-from-bottom-4 duration-500 font-black">
                                 <h2 className="text-3xl font-black mb-10 text-center text-[#8799E8]">⭐ 幹部表現與評價</h2>
                                 <div className="space-y-6">{officers.map(off => (
                                     <div key={off.id} className="flex flex-col xl:flex-row gap-4 p-4 rounded-[2.5rem] border-2 border-slate-50 hover:bg-white transition-all duration-300"><div className="flex flex-col justify-center xl:w-40 shrink-0 font-black"><h3 className="font-black text-2xl text-indigo-700 tracking-tight leading-tight">{off.role}</h3><div className="text-base font-bold text-slate-500 font-black">{off.name} <span className="text-[10px] opacity-40 font-bold">#{off.seatNo}</span></div></div>
@@ -445,31 +375,35 @@
 
                         {step === 'pref' && (
                             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start animate-in fade-in duration-500 font-black">
-                                <div className="lg:col-span-4 bg-white p-8 rounded-[4rem] border-4 lg:sticky lg:top-28 shadow-xl text-center font-black"><h3 className="text-xl font-black text-[#8799E8] mb-6 font-black">可選職務</h3>
-                                <div className="flex flex-wrap gap-3 p-6 bg-[#FFFAF0] rounded-[2.5rem] min-h-[200px] border-2 border-dashed" onDragOver={(e)=>e.preventDefault()} onDrop={(e)=>handleDrop(e,'pool')}>{availableRoles.map(r => (<div key={r} draggable onDragStart={(e)=>setDraggedItem({type:'pool',value:r})} className="bg-white border-2 border-[#C7CEEA] px-6 py-3 rounded-2xl font-black text-base text-[#8799E8] cursor-grab shadow-sm active:scale-95 transition flex items-center hover:border-indigo-400"><span className="mr-3 opacity-30 font-black">⠿</span> {r}</div>))}</div></div>
-                                <div className="lg:col-span-8 bg-white p-12 rounded-[4rem] border-4 shadow-xl text-center font-black"><h3 className="text-2xl font-black mb-8 text-slate-800 tracking-tighter">下學期志願排序 (前 5 名必填)</h3>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">{userResponse.preferences.map((p, i) => (
-                                    <div key={i} onDragOver={(e)=>e.preventDefault()} onDrop={(e)=>handleDrop(e,'slot',i)} className={`flex items-center gap-5 p-6 rounded-[2.5rem] border-2 transition-all font-black ${i < 5 ? 'bg-lime-50/50 border-lime-200 shadow-sm' : 'bg-[#FFFAF0] border-transparent'}`}><div className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-white shrink-0 shadow-lg ${i < 5 ? 'bg-emerald-400' : 'bg-indigo-300'} font-black`}>{i + 1}</div><div className="flex-1 h-[64px] flex items-center overflow-hidden">{p ? <div draggable onDragStart={(e)=>setDraggedItem({type:'slot',value:p,index:i})} className="bg-white border-2 border-[#C7CEEA] px-6 py-4 rounded-[1.5rem] font-black text-xl text-[#8799E8] cursor-grab shadow-md w-full flex justify-between animate-in zoom-in"><span>{p}</span><span className="opacity-20 font-black">⠿</span></div> : <span className="text-slate-200 font-bold italic ml-3">拖曳至此</span>}</div></div>
+                                <div className="lg:col-span-4 bg-white p-8 rounded-[4rem] border-4 lg:sticky lg:top-28 shadow-xl text-center font-black"><h3 className="text-xl font-black text-[#8799E8] mb-6 font-black font-black">可選職務</h3>
+                                <div className="flex flex-wrap gap-3 p-6 bg-[#FFFAF0] rounded-[2.5rem] min-h-[200px] border-2 border-dashed font-black" onDragOver={(e)=>e.preventDefault()} onDrop={(e)=>handleDrop(e,'pool')}>
+                                    {ROLE_ORDER.filter(r => !userResponse.preferences.includes(r)).map(r => (
+                                        <div key={r} draggable onDragStart={(e)=>{}} className="bg-white border-2 border-[#C7CEEA] px-6 py-3 rounded-2xl font-black text-base text-[#8799E8] cursor-grab shadow-sm flex items-center gap-2">⠿ {r}</div>
+                                    ))}
+                                </div></div>
+                                <div className="lg:col-span-8 bg-white p-12 rounded-[4rem] border-4 shadow-xl text-center font-black"><h3 className="text-2xl font-black mb-8 text-slate-800 tracking-tighter font-black">下學期志願排序 (前 5 名必填)</h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 font-black">{userResponse.preferences.map((p, i) => (
+                                    <div key={i} className={`flex items-center gap-5 p-6 rounded-[2.5rem] border-2 transition-all font-black ${i < 5 ? 'bg-lime-50/50 border-lime-200 shadow-sm' : 'bg-[#FFFAF0] border-transparent'}`}><div className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-white shrink-0 shadow-lg ${i < 5 ? 'bg-emerald-400' : 'bg-indigo-300'} font-black`}>{i + 1}</div><div className="flex-1 h-[64px] flex items-center overflow-hidden">{p ? <div className="bg-white border-2 border-[#C7CEEA] px-6 py-4 rounded-[1.5rem] font-black text-xl text-[#8799E8] w-full flex justify-between animate-in zoom-in"><span>{p}</span><span className="opacity-20">⠿</span></div> : <span className="text-slate-200 font-bold italic ml-3">未選入</span>}</div></div>
                                 ))}</div>
-                                <div className="flex justify-between mt-12 items-center px-4"><button onClick={() => setStep('eval')} className="text-[#C7CEEA] font-black underline text-lg hover:text-indigo-400 transition-all">← 修改評分</button><button onClick={handleFinalSubmitCheck} className="bg-[#B5EAD7] text-emerald-800 font-black py-6 px-20 rounded-full shadow-2xl border-4 border-white text-xl hover:scale-105 active:scale-95 transition-all">確認儲存並送出</button></div></div>
+                                <div className="flex justify-between mt-12 items-center px-4 font-black"><button onClick={() => setStep('eval')} className="text-[#C7CEEA] font-black underline text-lg hover:text-indigo-400 transition-all font-black">← 返回修改評分</button><button onClick={handleFinalSubmitCheck} className="bg-[#B5EAD7] text-emerald-800 font-black py-6 px-20 rounded-full shadow-2xl border-4 border-white text-xl active:scale-95 transition-all font-black font-black">確認儲存並送出</button></div></div>
                             </div>
                         )}
 
                         {step === 'summary' && (
-                            <div className="bg-white p-12 rounded-[4rem] border-4 border-white shadow-2xl text-center relative animate-in zoom-in duration-700">
+                            <div className="bg-white p-12 rounded-[4rem] border-4 border-white shadow-2xl text-center relative animate-in zoom-in duration-700 font-black">
                                 <div className="absolute top-6 right-8 flex items-center gap-2 font-black uppercase text-[10px] text-slate-300"><div className={`w-2 h-2 rounded-full ${refreshTick % 2 === 0 ? 'bg-emerald-400 animate-ping' : 'bg-emerald-200'}`}></div>Live Updates</div>
                                 <h2 className="text-4xl font-black text-slate-800 mb-8 tracking-tighter">填寫成功！✨</h2>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12"><div className="bg-rose-50 p-8 rounded-[3rem] border-2 border-rose-100 shadow-sm transition-all hover:scale-105"><h4 className="text-rose-400 font-black text-lg mb-2">未完成評分</h4><div className="text-5xl font-black text-rose-600">{statistics.incEval}<span className="text-xl ml-2 opacity-50">人</span></div></div><div className="bg-indigo-50 p-8 rounded-[3rem] border-2 border-indigo-100 shadow-sm transition-all hover:scale-105"><h4 className="text-indigo-400 font-black text-lg mb-2">未完成志願</h4><div className="text-5xl font-black text-indigo-600">{statistics.incPref}<span className="text-xl ml-2 opacity-50">人</span></div></div></div>
-                                <div className="text-left space-y-8"><div className="flex justify-between border-b pb-4 items-end"><h3 className="text-xl font-black text-slate-700">志願選填熱度排行</h3><div className="flex gap-4 text-[10px] font-black"><div className="flex items-center gap-1"><div className="w-3 h-3 bg-rose-400 rounded-sm"></div> 1st</div><div className="flex items-center gap-1"><div className="w-3 h-3 bg-amber-400 rounded-sm"></div> 2nd</div><div className="flex items-center gap-1"><div className="w-3 h-3 bg-indigo-400 rounded-sm"></div> 3rd</div></div></div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8 font-black font-black">{ROLE_ORDER.map(role => (<div key={role} className="flex flex-col gap-2"><div className="flex justify-between items-end px-1"><span className="font-black text-slate-600 text-lg">{role}</span><span className="text-[10px] font-black text-slate-300">總計 {(statistics.roleStats[role]?.r1 || 0) + (statistics.roleStats[role]?.r2 || 0) + (statistics.roleStats[role]?.r3 || 0)}</span></div><div className="battery-grid bg-slate-100 p-1.5 rounded-lg border border-slate-200/50">{Array.from({length: statistics.roleStats[role]?.r1 || 0}).map((_, i) => <div key={`r1-${i}`} className="battery-cell bg-rose-400 shadow-sm"></div>)}{Array.from({length: statistics.roleStats[role]?.r2 || 0}).map((_, i) => <div key={`r2-${i}`} className="battery-cell bg-amber-400 shadow-sm"></div>)}{Array.from({length: statistics.roleStats[role]?.r3 || 0}).map((_, i) => <div key={`r3-${i}`} className="battery-cell bg-indigo-400 shadow-sm"></div>)}{ ((statistics.roleStats[role]?.r1 || 0) + (statistics.roleStats[role]?.r2 || 0) + (statistics.roleStats[role]?.r3 || 0) === 0) && <div className="col-span-full h-3"></div>}</div></div>))}</div></div>
-                                <div className="mt-20 pt-10 border-t flex flex-col items-center gap-4"><button onClick={() => setStep('eval')} className="bg-[#FFFAF0] text-[#C7CEEA] font-black py-5 px-16 rounded-full border-4 border-[#C7CEEA]/20 hover:bg-[#C7CEEA] hover:text-white transition-all shadow-sm active:scale-95">返回修改我的填答</button></div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12"><div className="bg-rose-50 p-8 rounded-[3rem] border-2 border-rose-100 shadow-sm transition-all hover:scale-105"><h4 className="text-rose-400 font-black text-lg mb-2">未完成評分</h4><div className="text-5xl font-black text-rose-600 font-black">{statistics.incEval}<span className="text-xl ml-2 opacity-50 font-black">人</span></div></div><div className="bg-indigo-50 p-8 rounded-[3rem] border-2 border-indigo-100 shadow-sm transition-all hover:scale-105"><h4 className="text-indigo-400 font-black text-lg mb-2">未完成志願</h4><div className="text-5xl font-black text-indigo-600 font-black">{statistics.incPref}<span className="text-xl ml-2 opacity-50 font-black">人</span></div></div></div>
+                                <div className="text-left space-y-8 font-black font-black"><div className="flex justify-between border-b pb-4 items-end font-black"><h3 className="text-xl font-black text-slate-700">志願選填熱度排行</h3><div className="flex gap-4 text-[10px] font-black"><div className="flex items-center gap-1 font-black"><div className="w-3 h-3 bg-rose-400 rounded-sm"></div> 1st</div><div className="flex items-center gap-1 font-black"><div className="w-3 h-3 bg-amber-400 rounded-sm"></div> 2nd</div><div className="flex items-center gap-1 font-black"><div className="w-3 h-3 bg-indigo-400 rounded-sm"></div> 3rd</div></div></div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">{ROLE_ORDER.map(role => (<div key={role} className="flex flex-col gap-2 font-black font-black"><div className="flex justify-between items-end px-1 font-black font-black"><span className="font-black text-slate-600 text-lg">{role}</span><span className="text-[10px] font-black text-slate-300">總計 {(statistics.roleStats[role]?.r1 || 0) + (statistics.roleStats[role]?.r2 || 0) + (statistics.roleStats[role]?.r3 || 0)}</span></div><div className="battery-grid bg-slate-100 p-1.5 rounded-lg border border-slate-200/50">{Array.from({length: statistics.roleStats[role]?.r1 || 0}).map((_, i) => <div key={`r1-${i}`} className="battery-cell bg-rose-400 shadow-sm"></div>)}{Array.from({length: statistics.roleStats[role]?.r2 || 0}).map((_, i) => <div key={`r2-${i}`} className="battery-cell bg-amber-400 shadow-sm"></div>)}{Array.from({length: statistics.roleStats[role]?.r3 || 0}).map((_, i) => <div key={`r3-${i}`} className="battery-cell bg-indigo-400 shadow-sm"></div>)}{ ((statistics.roleStats[role]?.r1 || 0) + (statistics.roleStats[role]?.r2 || 0) + (statistics.roleStats[role]?.r3 || 0) === 0) && <div className="col-span-full h-3 font-black"></div>}</div></div>))}</div></div>
+                                <div className="mt-20 pt-10 border-t flex flex-col items-center gap-4 font-black font-black"><button onClick={() => setStep('eval')} className="bg-[#FFFAF0] text-[#C7CEEA] font-black py-5 px-16 rounded-full border-4 border-[#C7CEEA]/20 hover:bg-[#C7CEEA] hover:text-white transition-all shadow-sm active:scale-95 font-black font-black">返回修改我的填答</button></div>
                             </div>
                         )}
 
                         {step === 'unauthorized' && (
-                            <div className="bg-white p-12 rounded-[4rem] shadow-sm border-4 border-rose-100 max-w-md mx-auto mt-20 text-center animate-in zoom-in duration-500 font-black">
-                                <div className="text-6xl mb-8">🚫</div><h2 className="text-3xl font-black text-rose-400 mb-6 tracking-tighter">身分核對失敗</h2>
-                                <p className="text-slate-400 font-bold mb-10 leading-relaxed font-black">您的 Google 名稱「<span className="text-rose-600 font-black">{user?.displayName}</span>」不在名單中。<br/><br/>請先請老師儲存名單，或聯繫老師修正名單內容。</p>
+                            <div className="bg-white p-12 rounded-[4rem] shadow-sm border-4 border-rose-100 max-w-md mx-auto mt-20 text-center animate-in zoom-in duration-500 font-black font-black">
+                                <div className="text-6xl mb-8 font-black">🚫</div><h2 className="text-3xl font-black text-rose-400 mb-6 tracking-tighter">身分核對失敗</h2>
+                                <p className="text-slate-400 font-bold mb-10 leading-relaxed">您的 Google 名稱「<span className="text-rose-600 font-black">{user?.displayName}</span>」目前不在幹部名單中。</p>
                                 <button onClick={handleLogout} className="w-full bg-slate-100 py-6 rounded-[2.5rem] font-black text-slate-400 hover:bg-slate-200 transition-all text-lg font-black active:scale-95">登出更換帳號</button>
                             </div>
                         )}
