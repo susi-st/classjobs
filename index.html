@@ -34,7 +34,7 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
-        // --- Firebase 初始化 (已更新為 classjob-1d8bb) ---
+        // --- Firebase 初始化 (新專案 classjob-1d8bb) ---
         const firebaseConfig = {
             apiKey: "AIzaSyDPue2Ac6K2QyZ3PI5gBAA9GcleCAlisNU",
             authDomain: "classjob-1d8bb.firebaseapp.com",
@@ -48,7 +48,6 @@
         const auth = firebase.auth();
         const db = firebase.firestore();
         
-        const appId = "class-officer-system";
         const TEACHER_EMAIL = "susi@st.tc.edu.tw";
 
         const ROLE_ORDER = [
@@ -58,9 +57,11 @@
             "禮貌2", "圖書1", "圖書2", "腳踏車1", "腳踏車2"
         ];
 
+        const normalizeRole = (roleName) => roleName ? roleName.toString().replace(/\d+$/, '').trim() : "";
+
         const RATING_OPTIONS = [
             { val: -1, label: "表現不好，邊做邊玩", color: "bg-rose-100", activeColor: "bg-rose-500", textColor: "text-rose-900", activeText: "text-white" },
-            { val: 0, label: "被動、要做不做", color: "bg-orange-100", activeColor: "bg-orange-400", textColor: "text-orange-900", activeText: "text-white" },
+            { val: 0, label: "被動、要做不做", color: "bg-orange-100", activeColor: "bg-orange-400", textColor: "text-orange-900" },
             { val: 1, label: "偶爾做，比沒做還好一點", color: "bg-amber-100", activeColor: "bg-amber-400", textColor: "text-amber-900" },
             { val: 2, label: "常常做，大部份都有完成", color: "bg-emerald-100", activeColor: "bg-emerald-500", textColor: "text-emerald-900" },
             { val: 3, label: "都會主動去做，都按時完成", color: "bg-indigo-100", activeColor: "bg-indigo-600", textColor: "text-indigo-900" }
@@ -75,8 +76,8 @@
             const [modal, setModal] = useState({ show: false, title: '', message: '', type: 'info', onConfirm: null });
             
             const [isActionLoading, setIsActionLoading] = useState(false);
-            const [showAwardModal, setShowAwardModal] = useState(false);
-            const [topNFilter, setTopNFilter] = useState(3);
+            const [showAwardModal, setShowAwardModal] = useState(false); 
+            const [topNFilter, setTopNFilter] = useState(3); 
             const [refreshTick, setRefreshTick] = useState(0);
 
             const [officers, setOfficers] = useState([]);
@@ -92,7 +93,6 @@
                 return () => clearInterval(interval);
             }, []);
 
-            // 登入狀態監控
             useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
                     if (currentUser) {
@@ -114,7 +114,8 @@
 
             const checkStudentIdentity = async (currentUser) => {
                 try {
-                    const snap = await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('member_list').get();
+                    // 使用簡化路徑 member_list
+                    const snap = await db.collection('member_list').get();
                     const list = snap.docs.map(d => d.data());
                     const matched = list.find(o => o.name === currentUser.displayName);
                     if (matched) {
@@ -125,11 +126,12 @@
                     } else {
                         setStep('admin');
                     }
-                } catch (e) { console.error(e); }
+                } catch (e) { console.error("Identity Check Error:", e); }
             };
 
             const loadUserResponse = (uid) => {
-                db.collection('artifacts').doc(appId).collection('users').doc(uid).collection('data').doc('responses').onSnapshot((docSnap) => {
+                // 使用簡化路徑 responses
+                db.collection('responses').doc(uid).onSnapshot((docSnap) => {
                     if (docSnap.exists) {
                         const data = docSnap.data();
                         setUserResponse(prev => ({
@@ -148,7 +150,7 @@
             // 監聽幹部名單 (member_list)
             useEffect(() => {
                 if (!user) return;
-                const unsub = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('member_list').onSnapshot((snapshot) => {
+                const unsub = db.collection('member_list').onSnapshot((snapshot) => {
                     const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                     data.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
                     setOfficers(data);
@@ -159,9 +161,10 @@
                 return () => unsub();
             }, [user, editList.length]);
 
+            // 監聽所有回應 (responses)
             useEffect(() => {
                 if (!user) return;
-                const unsub = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('responses_summary').onSnapshot((snap) => {
+                const unsub = db.collection('responses').onSnapshot((snap) => {
                     setAllStudentResponses(snap.docs.map(d => ({ uid: d.id, ...d.data() })));
                 });
                 return () => unsub();
@@ -197,6 +200,16 @@
                 return stats;
             }, [allStudentResponses, officers]);
 
+            const volunteerStats = useMemo(() => {
+                const stats = {};
+                ROLE_ORDER.forEach(role => stats[role] = []);
+                allStudentResponses.forEach(resp => {
+                    const prefs = resp.preferences || [];
+                    prefs.forEach((role, idx) => { if (role && stats[role] !== undefined) stats[role].push({ name: resp.name, seatNo: resp.seatNo, rank: idx + 1 }); });
+                });
+                return stats;
+            }, [allStudentResponses]);
+
             const awardList = useMemo(() => {
                 const list = [];
                 Object.entries(ratingStats).forEach(([id, info]) => {
@@ -216,7 +229,7 @@
                 try {
                     await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
                 } catch (error) { 
-                    setModal({ show: true, title: '登入失敗', message: '無法開啟 Google 登入視窗。請確認新專案網域是否已授權。', type: 'error' });
+                    setModal({ show: true, title: '登入失敗', message: '無法開啟 Google 登入視窗。請確認是否在 Firebase 授權了 GitHub 網域。', type: 'error' });
                 }
             };
 
@@ -225,14 +238,12 @@
             const saveToDB = async () => {
                 setIsActionLoading(true); setModal({show:false});
                 try {
-                    const data = { ...userResponse, isSubmitted: true, lastUpdated: new Date().toISOString() };
-                    await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('data').doc('responses').set(data, { merge: true });
-                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('responses_summary').doc(user.uid).set({
-                        seatNo: userData?.seatNo || "??", name: user.displayName, evaluations: userResponse.evaluations, preferences: userResponse.preferences, lastUpdated: new Date().toISOString()
-                    });
+                    const data = { ...userResponse, isSubmitted: true, lastUpdated: new Date().toISOString(), name: user.displayName };
+                    // 寫入 responses 集合
+                    await db.collection('responses').doc(user.uid).set(data, { merge: true });
                     setStep('summary');
                 } catch (e) { 
-                    setModal({ show: true, title: '儲存失敗', message: '無法寫入資料，請確認 Rules 設定。', type: 'error' });
+                    setModal({ show: true, title: '儲存失敗', message: '儲存發生錯誤：' + e.message, type: 'error' });
                 } finally { setIsActionLoading(false); }
             };
 
@@ -259,6 +270,7 @@
 
             return (
                 <div className="min-h-screen pb-10 bg-[#FFFAF0]">
+                    {/* 彈窗 UI */}
                     {modal.show && (
                         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-[100] p-4 text-center text-black">
                             <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-sm w-full border-4 border-white">
@@ -312,7 +324,7 @@
                             {user && (
                                 <div className="flex items-center gap-4">
                                     {userData && <span className={`px-4 py-1.5 rounded-full text-sm font-black border-2 border-white shadow-sm ${userData.isTeacher ? 'bg-orange-100 text-orange-600' : 'bg-lime-100 text-lime-700'}`}>{userData.isTeacher ? '教師模式' : `${userData.seatNo} 號 ${userData.name}`}</span>}
-                                    <button onClick={handleLogout} className="text-slate-400 font-bold px-4 py-1 border rounded-full hover:bg-slate-50 text-xs shadow-sm font-black transition-all">登出</button>
+                                    <button onClick={handleLogout} className="text-slate-400 font-bold px-4 py-1 border rounded-full hover:bg-slate-50 text-xs shadow-sm font-black transition-all">登出系統</button>
                                 </div>
                             )}
                         </div>
@@ -326,7 +338,7 @@
                                     <button onClick={() => handleGoogleLogin('student')} className="w-full bg-[#C7CEEA] text-white py-6 rounded-[2.5rem] font-black shadow-lg hover:bg-indigo-400 transition-all text-xl">學生登入</button>
                                 </div>
                                 <div className="login-card flex-1 bg-white p-12 rounded-[4rem] shadow-xl border-t-8 border-[#B5EAD7] text-center flex flex-col justify-between max-w-sm">
-                                    <div><div className="text-7xl mb-8 text-black font-black">👩‍🏫</div><h2 className="text-4xl font-black text-slate-800 mb-6 tracking-tighter text-black font-black">教師入口</h2><p className="text-slate-400 font-bold mb-10 leading-relaxed text-sm">管理幹部名單與檢視統計結果。</p></div>
+                                    <div><div className="text-7xl mb-8 text-black font-black">👩‍🏫</div><h2 className="text-4xl font-black text-slate-800 mb-6 tracking-tighter text-black">教師入口</h2><p className="text-slate-400 font-bold mb-10 leading-relaxed text-sm">管理幹部名單與檢視統計結果。</p></div>
                                     <button onClick={() => handleGoogleLogin('teacher')} className="w-full bg-[#B5EAD7] text-emerald-800 py-6 rounded-[2.5rem] font-black shadow-lg hover:bg-emerald-300 transition-all text-xl">教師管理</button>
                                 </div>
                             </div>
@@ -352,16 +364,14 @@
                                                 ))}<button onClick={()=>setEditList([...editList,{seatNo:'',role:'',name:''}])} className="text-xs font-bold text-indigo-400 mt-2 p-2 font-black">+ 增加欄位</button></div>
                                             )}
                                             <button onClick={async ()=>{
-                                                if (user.email !== TEACHER_EMAIL) return alert("權限不足。");
+                                                if (user.email !== TEACHER_EMAIL) return alert("權限不足，必須使用教師帳號 " + TEACHER_EMAIL);
                                                 setIsActionLoading(true);
                                                 try {
                                                     const batch = db.batch();
-                                                    // 強制寫入父文件，確保路徑可見性
-                                                    await db.collection('artifacts').doc(appId).set({ created: true }, { merge: true });
-                                                    await db.collection('artifacts').doc(appId).collection('public').doc('data').set({ created: true }, { merge: true });
-
-                                                    const col = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('member_list');
-                                                    const snap = await col.get(); snap.docs.forEach(d => batch.delete(d.ref));
+                                                    // 精確路徑：member_list
+                                                    const col = db.collection('member_list');
+                                                    const snap = await col.get(); 
+                                                    snap.docs.forEach(d => batch.delete(d.ref));
                                                     
                                                     editList.forEach((o) => { 
                                                         if (o.name && o.role) { 
@@ -379,7 +389,7 @@
                                                     alert("名單儲存成功！");
                                                     setAdminTab('progress'); 
                                                 } catch (err) {
-                                                    setModal({ show: true, title: '儲存失敗', message: `錯誤代碼: ${err.code}\n請檢查新專案的 Rules 是否正確。`, type: 'error' });
+                                                    setModal({ show: true, title: '儲存失敗', message: `代碼: ${err.code}\n請確認 Rules 已經更新。`, type: 'error' });
                                                 } finally { setIsActionLoading(false); }
                                             }} className="w-full bg-[#B5EAD7] text-emerald-800 py-5 rounded-3xl font-black mt-6 shadow-lg active:scale-95 transition-all font-black">{isActionLoading ? '處理中...' : '儲存名單並切換檢視'}</button>
                                         </div>
@@ -448,8 +458,8 @@
                         )}
 
                         {step === 'unauthorized' && (
-                            <div className="bg-white p-12 rounded-[4rem] shadow-sm border-4 border-rose-100 max-w-md mx-auto mt-20 text-center animate-in zoom-in duration-500 font-black text-black font-black">
-                                <div className="text-6xl mb-8 font-black font-black">🚫</div><h2 className="text-3xl font-black text-rose-400 mb-6 tracking-tighter font-black">身分核對失敗</h2>
+                            <div className="bg-white p-12 rounded-[4rem] shadow-sm border-4 border-rose-100 max-w-md mx-auto mt-20 text-center animate-in zoom-in duration-500 font-black text-black font-black font-black">
+                                <div className="text-6xl mb-8 font-black font-black">🚫</div><h2 className="text-3xl font-black text-rose-400 mb-6 tracking-tighter font-black font-black">身分核對失敗</h2>
                                 <p className="text-slate-400 font-bold mb-10 leading-relaxed font-black font-black">您的 Google 名稱「<span className="text-rose-600 font-black font-black">{user?.displayName}</span>」不在目前的名單中。</p>
                                 <button onClick={handleLogout} className="w-full bg-slate-100 py-6 rounded-[2.5rem] font-black text-slate-400 hover:bg-slate-200 transition-all text-lg active:scale-95 font-black font-black">登出更換帳號</button>
                             </div>
