@@ -9,7 +9,7 @@
     <!-- React & ReactDOM CDN -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- Babel CDN (用於在瀏覽器解析 JSX) -->
+    <!-- Babel CDN -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <!-- Firebase SDKs (Compat 版本) -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -21,7 +21,7 @@
         .cursor-grab { cursor: grab; }
         .cursor-grabbing { cursor: grabbing; }
         .login-card:hover { transform: translateY(-5px); transition: all 0.3s ease; }
-        .health-segment { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+        .health-segment { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); white-space: nowrap; }
         /* 隱藏捲動條但保有功能 */
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -30,7 +30,7 @@
 <body class="bg-[#FFFAF0] text-slate-700">
     <div id="root">
         <div class="min-h-screen flex items-center justify-center">
-            <div class="text-[#8799E8] font-bold animate-pulse text-xl">系統初始化中...</div>
+            <div class="text-[#8799E8] font-black animate-pulse text-xl">系統載入中...</div>
         </div>
     </div>
 
@@ -63,11 +63,11 @@
         ];
 
         const RATING_OPTIONS = [
-            { val: -1, label: "表現不好，邊做邊玩", color: "bg-rose-100", activeColor: "bg-rose-500", border: "border-rose-200", textColor: "text-rose-900", activeText: "text-white" },
-            { val: 0, label: "被動、要做不做", color: "bg-orange-100", activeColor: "bg-orange-400", border: "border-orange-200", textColor: "text-orange-900", activeText: "text-white" },
-            { val: 1, label: "偶爾做，比沒做還好一點", color: "bg-amber-100", activeColor: "bg-amber-400", border: "border-amber-200", textColor: "text-amber-900", activeText: "text-white" },
-            { val: 2, label: "常常做，大部份都有完成", color: "bg-emerald-100", activeColor: "bg-emerald-500", border: "border-emerald-200", textColor: "text-emerald-900", activeText: "text-white" },
-            { val: 3, label: "都會主動去做，都按時完成", color: "bg-indigo-100", activeColor: "bg-indigo-600", border: "border-indigo-200", textColor: "text-indigo-900", activeText: "text-white" }
+            { val: -1, label: "-1)表現不好，邊做邊玩", color: "bg-rose-100", activeColor: "bg-rose-500", border: "border-rose-200", textColor: "text-rose-900", activeText: "text-white" },
+            { val: 0, label: "+0)被動、要做不做", color: "bg-orange-100", activeColor: "bg-orange-400", border: "border-orange-200", textColor: "text-orange-900", activeText: "text-white" },
+            { val: 1, label: "+1)偶爾做，比沒做還好一點", color: "bg-amber-100", activeColor: "bg-amber-400", border: "border-amber-200", textColor: "text-amber-900", activeText: "text-white" },
+            { val: 2, label: "+2)常常做，大部份都有完成", color: "bg-emerald-100", activeColor: "bg-emerald-500", border: "border-emerald-200", textColor: "text-emerald-900", activeText: "text-white" },
+            { val: 3, label: "+3)都會主動去做，都按時完成", color: "bg-indigo-100", activeColor: "bg-indigo-600", border: "border-indigo-200", textColor: "text-indigo-900", activeText: "text-white" }
         ];
 
         function App() {
@@ -149,7 +149,6 @@
                 if (!user) return;
                 const unsub = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('officers').onSnapshot((snapshot) => {
                     const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                    // 根據預定義的 ROLE_ORDER 進行嚴格排序
                     data.sort((a, b) => {
                         const idxA = ROLE_ORDER.indexOf(a.role);
                         const idxB = ROLE_ORDER.indexOf(b.role);
@@ -157,7 +156,6 @@
                     });
                     setOfficers(data);
                     if (editList.length === 0) setEditList(data);
-                    
                     const uniqueRoles = [...new Set(data.map(o => o.role.replace(/\d+$/, '')))];
                     setAvailableRoles(uniqueRoles.filter(r => !(userResponse.preferences || []).includes(r)));
                 });
@@ -204,11 +202,7 @@
             const handleGoogleLogin = async (entrance) => {
                 setTargetEntrance(entrance);
                 const provider = new firebase.auth.GoogleAuthProvider();
-                try {
-                    await auth.signInWithPopup(provider);
-                } catch (error) {
-                    alert("登入失敗。");
-                }
+                try { await auth.signInWithPopup(provider); } catch (error) { alert("登入失敗。"); }
             };
 
             const handleLogout = () => { auth.signOut(); setStep('login'); setTargetEntrance(null); };
@@ -217,11 +211,7 @@
                 setIsActionLoading(true);
                 setModal({show:false});
                 try {
-                    const dataToSave = { 
-                        ...userResponse, 
-                        isSubmitted: true, 
-                        lastUpdated: new Date().toISOString() 
-                    };
+                    const dataToSave = { ...userResponse, isSubmitted: true, lastUpdated: new Date().toISOString() };
                     await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('data').doc('responses').set(dataToSave, { merge: true });
                     await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('responses_summary').doc(user.uid).set({
                         seatNo: userData?.seatNo || "??",
@@ -231,9 +221,7 @@
                         lastUpdated: new Date().toISOString()
                     });
                     setStep('waiting');
-                } catch (e) {
-                    alert("儲存失敗：" + e.message);
-                } finally { setIsActionLoading(false); }
+                } catch (e) { alert("儲存失敗：" + e.message); } finally { setIsActionLoading(false); }
             };
 
             const handleDrop = (e, targetType, targetIndex) => {
@@ -249,28 +237,22 @@
                 setDraggedItem(null);
             };
 
-            if (loading) return (
-                <div className="min-h-screen flex items-center justify-center bg-[#FFFAF0]">
-                    <div className="text-[#8799E8] font-black animate-pulse text-lg">系統啟動中...</div>
-                </div>
-            );
+            if (loading) return <div className="min-h-screen flex items-center justify-center bg-[#FFFAF0] text-[#8799E8] font-black animate-pulse">系統載入中...</div>;
 
             return (
                 <div className="min-h-screen pb-10">
-                    {/* 彈窗 UI */}
+                    {/* 彈窗 */}
                     {modal.show && (
                         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-                            <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-sm w-full border-4 border-white overflow-hidden">
-                                <div className="p-8 text-center">
+                            <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-sm w-full border-4 border-white overflow-hidden text-center">
+                                <div className="p-8">
                                     <h3 className="text-2xl font-black mb-2">{modal.title}</h3>
-                                    <p className="text-slate-500 font-bold text-sm">{modal.message}</p>
+                                    <p className="text-slate-500 font-bold">{modal.message}</p>
                                 </div>
                                 <div className="p-6 pt-0 flex gap-3">
                                     {modal.onConfirm ? (
-                                        <>
-                                            <button onClick={() => setModal({show:false})} className="flex-1 py-4 bg-slate-100 text-slate-400 font-black rounded-3xl">取消</button>
-                                            <button onClick={modal.onConfirm} className="flex-1 py-4 bg-[#B5EAD7] text-emerald-800 font-black rounded-3xl">確定</button>
-                                        </>
+                                        <><button onClick={() => setModal({show:false})} className="flex-1 py-4 bg-slate-100 text-slate-400 font-black rounded-3xl">取消</button>
+                                          <button onClick={modal.onConfirm} className="flex-1 py-4 bg-[#B5EAD7] text-emerald-800 font-black rounded-3xl">確定</button></>
                                     ) : <button onClick={() => setModal({show:false})} className="w-full py-4 bg-[#C7CEEA] text-white font-black rounded-3xl">知道了</button>}
                                 </div>
                             </div>
@@ -279,19 +261,11 @@
 
                     <header className="bg-white/70 backdrop-blur-md p-6 sticky top-0 z-10 border-b border-white">
                         <div className="max-w-7xl mx-auto flex justify-between items-center">
-                            <h1 className="text-xl sm:text-2xl font-black text-[#8799E8] flex items-center gap-2">
-                                <span className="text-2xl">❤️</span> 班級幹部票選系統
-                            </h1>
+                            <h1 className="text-xl sm:text-2xl font-black text-[#8799E8] flex items-center gap-2">❤️ 班級幹部票選系統</h1>
                             {user && (
                                 <div className="flex items-center gap-4">
-                                    {userData && (
-                                        <span className={`px-4 py-1.5 rounded-full text-sm font-black border-2 border-white shadow-sm ${userData.isTeacher ? 'bg-orange-100 text-orange-600' : 'bg-lime-100 text-lime-700'}`}>
-                                            {userData.isTeacher ? '教師指導模式' : `${userData.seatNo} 號 ${userData.name}`}
-                                        </span>
-                                    )}
-                                    {user.email === TEACHER_EMAIL && step !== 'admin' && (
-                                        <button onClick={() => setStep('admin')} className="bg-[#B5EAD7] text-emerald-800 font-black px-4 py-2 rounded-full text-xs shadow-sm">返回管理</button>
-                                    )}
+                                    {userData && <span className={`px-4 py-1.5 rounded-full text-sm font-black border-2 border-white shadow-sm ${userData.isTeacher ? 'bg-orange-100 text-orange-600' : 'bg-lime-100 text-lime-700'}`}>{userData.isTeacher ? '教師模式' : `${userData.seatNo} 號 ${userData.name}`}</span>}
+                                    {user.email === TEACHER_EMAIL && step !== 'admin' && <button onClick={() => setStep('admin')} className="bg-[#B5EAD7] text-emerald-800 font-black px-4 py-2 rounded-full text-xs shadow-sm">管理</button>}
                                     <button onClick={handleLogout} className="text-slate-400 font-bold px-4 py-2 bg-white rounded-full border border-slate-100 text-sm">登出</button>
                                 </div>
                             )}
@@ -299,24 +273,15 @@
                     </header>
 
                     <main className="max-w-7xl mx-auto p-4 mt-8">
-                        {/* 登入介面 */}
                         {step === 'login' && (
                             <div className="flex flex-col md:flex-row gap-8 justify-center items-stretch mt-10 px-4">
                                 <div className="login-card flex-1 bg-white p-10 rounded-[4rem] shadow-xl border-t-8 border-[#C7CEEA] text-center flex flex-col justify-between max-w-sm">
-                                    <div>
-                                        <div className="text-6xl mb-6">🎒</div>
-                                        <h2 className="text-3xl font-black text-slate-800 mb-4">學生入口</h2>
-                                        <p className="text-slate-400 font-bold mb-8 text-sm leading-relaxed">幹部表現評分與志願選填</p>
-                                    </div>
-                                    <button onClick={() => handleGoogleLogin('student')} className="w-full bg-[#C7CEEA] text-white py-5 rounded-[2.5rem] font-black hover:bg-[#8799E8] transition shadow-lg active:scale-95">開始填答</button>
+                                    <div><div className="text-6xl mb-6">🎒</div><h2 className="text-3xl font-black text-slate-800 mb-4">學生入口</h2><p className="text-slate-400 font-bold mb-8 text-sm">開始評分與選填志願</p></div>
+                                    <button onClick={() => handleGoogleLogin('student')} className="w-full bg-[#C7CEEA] text-white py-5 rounded-[2.5rem] font-black shadow-lg">開始填答</button>
                                 </div>
                                 <div className="login-card flex-1 bg-white p-10 rounded-[4rem] shadow-xl border-t-8 border-[#B5EAD7] text-center flex flex-col justify-between max-w-sm">
-                                    <div>
-                                        <div className="text-6xl mb-6">👩‍🏫</div>
-                                        <h2 className="text-3xl font-black text-slate-800 mb-4">教師入口</h2>
-                                        <p className="text-slate-400 font-bold mb-8 text-sm leading-relaxed">名單設定與統計結果</p>
-                                    </div>
-                                    <button onClick={() => handleGoogleLogin('teacher')} className="w-full bg-[#B5EAD7] text-emerald-800 py-5 rounded-[2.5rem] font-black hover:bg-[#8DE2C1] transition shadow-lg active:scale-95">管理後台</button>
+                                    <div><div className="text-6xl mb-6">👩‍🏫</div><h2 className="text-3xl font-black text-slate-800 mb-4">教師入口</h2><p className="text-slate-400 font-bold mb-8 text-sm">名單設定與統計結果</p></div>
+                                    <button onClick={() => handleGoogleLogin('teacher')} className="w-full bg-[#B5EAD7] text-emerald-800 py-5 rounded-[2.5rem] font-black shadow-lg">管理後台</button>
                                 </div>
                             </div>
                         )}
@@ -329,19 +294,16 @@
                                             {t === 'list' ? '名單設定' : t === 'progress' ? '填答進度' : t === 'ratings' ? '評分統計' : '志願統計'}
                                         </button>
                                     ))}
-                                    <button onClick={() => { setTargetEntrance('student'); setStep('eval'); }} className="px-6 py-3 rounded-2xl font-black text-xs sm:text-sm bg-orange-50 text-orange-400 ml-auto border border-orange-100 italic">模擬學生視角指導 →</button>
+                                    <button onClick={() => { setTargetEntrance('student'); setStep('eval'); }} className="px-6 py-3 rounded-2xl font-black text-xs sm:text-sm bg-orange-50 text-orange-400 ml-auto border border-orange-100">模擬填答指導 →</button>
                                 </div>
                                 <div className="bg-white p-6 sm:p-10 rounded-[4rem] border-4 border-white shadow-sm min-h-[400px]">
                                     {adminTab === 'list' && (
                                         <div>
-                                            <div className="flex justify-between items-center mb-6">
-                                                <h3 className="text-2xl font-black text-slate-700">幹部名單設定</h3>
-                                                <button onClick={() => setIsAdminMode(isAdminMode==='manual'?'paste':'manual')} className="text-xs font-bold text-indigo-400 underline">切換匯入模式</button>
-                                            </div>
+                                            <div className="flex justify-between items-center mb-6"><h3 className="text-2xl font-black text-slate-700">名單管理</h3><button onClick={() => setIsAdminMode(isAdminMode==='manual'?'paste':'manual')} className="text-xs font-bold text-indigo-400 underline">切換匯入模式</button></div>
                                             {isAdminMode === 'paste' ? (
                                                 <textarea value={pasteContent} onChange={(e)=>setPasteContent(e.target.value)} className="w-full h-48 bg-[#FFFAF0] rounded-3xl p-6 font-bold outline-none mb-4 border-2 border-transparent focus:border-[#C7CEEA]" placeholder="座號 職務 姓名" />
                                             ) : (
-                                                <div className="space-y-2 mb-4">
+                                                <div className="space-y-2">
                                                     {editList.map((row, idx) => (
                                                         <div key={idx} className="flex gap-2 items-center">
                                                             <input type="number" value={row.seatNo} onChange={(e)=>{const n=[...editList]; n[idx].seatNo=e.target.value; setEditList(n);}} className="w-16 p-3 bg-slate-50 rounded-2xl font-bold text-center text-sm" placeholder="座號" />
@@ -359,108 +321,65 @@
                                                 const col = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('officers');
                                                 const snap = await col.get();
                                                 snap.docs.forEach(d => batch.delete(d.ref));
-                                                editList.forEach((o, i) => { 
+                                                editList.forEach((o) => { 
                                                     if (o.name) { 
                                                         const newDoc = col.doc(); 
-                                                        // 加入排序 index
                                                         const order = ROLE_ORDER.indexOf(o.role);
                                                         batch.set(newDoc, { ...o, orderIndex: order === -1 ? 999 : order }); 
                                                     } 
                                                 });
-                                                await batch.commit();
-                                                setIsActionLoading(false);
-                                                alert("名單已同步至資料庫。");
-                                            }} className="w-full bg-[#B5EAD7] text-emerald-800 py-5 rounded-3xl font-black shadow-lg mt-4">{isActionLoading ? '儲存中...' : '儲存名單並排序'}</button>
+                                                await batch.commit(); setIsActionLoading(false); alert("儲存成功並已自動排序職務順序。");
+                                            }} className="w-full bg-[#B5EAD7] text-emerald-800 py-5 rounded-3xl font-black shadow-lg mt-4">{isActionLoading ? '儲存中...' : '儲存名單並套用順序'}</button>
                                         </div>
                                     )}
-
+                                    {/* 填答進度表格 */}
                                     {adminTab === 'progress' && (
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-left font-bold text-sm border-separate border-spacing-y-2">
-                                                <thead><tr className="text-slate-400 text-[10px] uppercase tracking-widest font-black">
-                                                    <th className="py-2 pl-4 w-20 text-center">座號</th>
-                                                    <th>姓名</th>
-                                                    <th className="text-center">填答狀態</th>
-                                                    <th className="text-right pr-4">最後同步時間</th>
-                                                </tr></thead>
+                                                <thead><tr className="text-slate-400 text-[10px] uppercase tracking-widest font-black"><th className="py-2 pl-4 w-20 text-center">座號</th><th>姓名</th><th className="text-center">填答狀態</th><th className="text-right pr-4">最後同步</th></tr></thead>
                                                 <tbody>{officers.map(student => {
                                                     const resp = allStudentResponses.find(r => r.name === student.name);
                                                     const hasEval = resp && Object.keys(resp.evaluations || {}).length >= officers.length;
                                                     const hasPref = resp && (resp.preferences || []).filter(p => p).length >= 5;
                                                     return (
-                                                        <tr key={student.id} className="bg-slate-50/50 hover:bg-white transition group border border-transparent hover:border-slate-100 rounded-2xl">
-                                                            <td className="py-4 pl-4 text-center">
-                                                                <span className="bg-white w-10 h-10 rounded-full flex items-center justify-center border border-slate-100 shadow-sm mx-auto">{student.seatNo}</span>
-                                                            </td>
+                                                        <tr key={student.id} className="bg-slate-50/50 hover:bg-white transition border border-transparent hover:border-slate-100 rounded-2xl">
+                                                            <td className="py-4 pl-4 text-center"><span className="bg-white w-10 h-10 rounded-full flex items-center justify-center border border-slate-100 shadow-sm mx-auto">{student.seatNo}</span></td>
                                                             <td className="py-4 text-slate-700 font-black text-lg">{student.name}</td>
-                                                            <td className="py-4">
-                                                                <div className="flex gap-2 justify-center">
-                                                                    <div className={`px-5 py-2 rounded-2xl text-[10px] font-black tracking-wider transition-all ${hasEval ? 'bg-emerald-100 text-emerald-600 shadow-sm' : 'bg-slate-100 text-slate-300'}`}>評分</div>
-                                                                    <div className={`px-5 py-2 rounded-2xl text-[10px] font-black tracking-wider transition-all ${hasPref ? 'bg-emerald-100 text-emerald-600 shadow-sm' : 'bg-slate-100 text-slate-300'}`}>志願</div>
-                                                                </div>
-                                                            </td>
-                                                            <td className="py-4 text-right pr-4 text-[10px] text-slate-300 font-medium">{resp?.lastUpdated ? new Date(resp.lastUpdated).toLocaleString() : '-'}</td>
+                                                            <td className="py-4"><div className="flex gap-2 justify-center"><div className={`px-5 py-2 rounded-2xl text-[10px] font-black transition-all ${hasEval ? 'bg-emerald-100 text-emerald-600 shadow-sm' : 'bg-slate-100 text-slate-300'}`}>評分</div><div className={`px-5 py-2 rounded-2xl text-[10px] font-black transition-all ${hasPref ? 'bg-emerald-100 text-emerald-600 shadow-sm' : 'bg-slate-100 text-slate-300'}`}>志願</div></div></td>
+                                                            <td className="py-4 text-right pr-4 text-[10px] text-slate-300">{resp?.lastUpdated ? new Date(resp.lastUpdated).toLocaleString() : '-'}</td>
                                                         </tr>
                                                     );
                                                 })}</tbody>
                                             </table>
                                         </div>
                                     )}
-
+                                    {/* 評分統計 */}
                                     {adminTab === 'ratings' && (
                                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                             {officers.map(off => {
                                                 const stats = ratingStats[off.id]?.counts || {};
                                                 return (
                                                     <div key={off.id} className="bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2 border-white shadow-sm">
-                                                        <div className="flex items-center gap-2 mb-4 font-black">
-                                                            <span className="bg-[#C7CEEA] text-white text-[10px] px-3 py-1 rounded-full">{off.role}</span>
-                                                            <span className="text-slate-700 text-lg">{off.name}</span>
-                                                        </div>
-                                                        <div className="grid grid-cols-5 gap-2">
-                                                            {RATING_OPTIONS.map(opt => (
-                                                                <div key={opt.val} className={`p-2 rounded-2xl flex flex-col items-center border-2 border-white ${opt.color}`}>
-                                                                    <span className="text-[10px] font-black opacity-50 mb-1">({opt.val >= 0 ? '+' : ''}{opt.val})</span>
-                                                                    <span className="text-xl font-black">{stats[String(opt.val)] || 0}</span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
+                                                        <div className="flex items-center gap-2 mb-4 font-black"><span className="bg-[#C7CEEA] text-white text-[10px] px-3 py-1 rounded-full">{off.role}</span><span className="text-slate-700 text-lg">{off.name}</span></div>
+                                                        <div className="grid grid-cols-5 gap-2">{RATING_OPTIONS.map(opt => (<div key={opt.val} className={`p-2 rounded-2xl flex flex-col items-center border-2 border-white ${opt.color}`}><span className="text-[10px] font-black opacity-50 mb-1">({opt.val >= 0 ? '+' : ''}{opt.val})</span><span className="text-xl font-black">{stats[String(opt.val)] || 0}</span></div>))}</div>
                                                     </div>
                                                 );
                                             })}
                                         </div>
                                     )}
-
+                                    {/* 志願統計 */}
                                     {adminTab === 'volunteers' && (
                                         <div className="space-y-8">
                                             <div className="flex flex-col sm:flex-row justify-between items-center bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2 border-white gap-4">
-                                                <div>
-                                                    <h4 className="font-black text-slate-700 text-lg">志願序即時篩選</h4>
-                                                    <p className="text-[10px] text-slate-400 font-bold italic">目前顯示：第 {volunteerRankFilter} 志願</p>
-                                                </div>
-                                                <div className="flex gap-3">
-                                                    {[1, 2, 3, 4, 5].map(rank => (
-                                                        <button key={rank} onClick={() => setVolunteerRankFilter(rank)}
-                                                            className={`w-12 h-12 rounded-2xl font-black text-sm transition-all shadow-sm ${volunteerRankFilter === rank ? 'bg-[#C7CEEA] text-white scale-110' : 'bg-white text-slate-300 border border-slate-100'}`}>
-                                                            {rank}
-                                                        </button>
-                                                    ))}
-                                                </div>
+                                                <div><h4 className="font-black text-slate-700 text-lg">志願序即時篩選</h4><p className="text-[10px] text-slate-400 font-bold italic">目前顯示：第 {volunteerRankFilter} 志願</p></div>
+                                                <div className="flex gap-3">{[1, 2, 3, 4, 5].map(rank => (<button key={rank} onClick={() => setVolunteerRankFilter(rank)} className={`w-12 h-12 rounded-2xl font-black text-sm transition-all shadow-sm ${volunteerRankFilter === rank ? 'bg-[#C7CEEA] text-white scale-110' : 'bg-white text-slate-300 border border-slate-100'}`}>{rank}</button>))}</div>
                                             </div>
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-sm">
                                                 {Object.entries(volunteerStats).map(([role, list]) => {
                                                     const filtered = list.filter(s => s.rank === volunteerRankFilter);
                                                     return (
-                                                        <div key={role} className="bg-slate-50 p-6 rounded-[2.5rem] border-2 border-white flex flex-col min-h-[160px]">
-                                                            <div className="font-black text-slate-600 mb-4 flex justify-between items-center border-b border-white pb-2">{role}<span className="text-[10px] text-indigo-400 bg-white px-3 py-1 rounded-full shadow-inner">{filtered.length} 人</span></div>
-                                                            <div className="space-y-2 flex-1">
-                                                                {filtered.map((s, i) => (
-                                                                    <div key={i} className="bg-white p-3 rounded-2xl text-xs font-black flex justify-between items-center shadow-sm border border-slate-50">
-                                                                        <div className="flex items-center gap-2">
-                                                                            <span className="text-[10px] text-slate-300">#{s.seatNo}</span><span className="text-slate-700">{s.name}</span>
-                                                                        </div>
-                                                                    </div>
-                                                                ))}
+                                                        <div key={role} className="bg-slate-50 p-6 rounded-[2.5rem] border-2 border-white flex flex-col min-h-[160px]"><div className="font-black text-slate-600 mb-4 flex justify-between items-center border-b border-white pb-2">{role}<span className="text-[10px] text-indigo-400 bg-white px-3 py-1 rounded-full shadow-inner">{filtered.length} 人</span></div>
+                                                            <div className="space-y-2 flex-1">{filtered.map((s, i) => (<div key={i} className="bg-white p-3 rounded-2xl text-xs font-black flex justify-between items-center shadow-sm border border-slate-50"><div className="flex items-center gap-2"><span className="text-[10px] text-slate-300">#{s.seatNo}</span><span className="text-slate-700">{s.name}</span></div></div>))}
                                                                 {filtered.length === 0 && <div className="text-slate-200 italic py-10 text-center text-[10px] font-black">無人選擇</div>}
                                                             </div>
                                                         </div>
@@ -473,51 +392,50 @@
                             </div>
                         )}
 
-                        {/* 學生填答 - 幹部評分 (加強版遊戲血條) */}
+                        {/* 學生填答 - 幹部評分 (針對職務與血條文字大幅強化) */}
                         {step === 'eval' && (
                             <div className="animate-in fade-in slide-in-from-bottom-4">
                                 <div className="bg-white p-6 sm:p-12 rounded-[4rem] border-4 border-white mb-8 shadow-sm">
-                                    <h2 className="text-3xl font-black mb-10 flex items-center justify-center gap-2">
-                                        ⭐ 班級幹部表現評價
-                                    </h2>
-                                    <div className="space-y-6">
+                                    <h2 className="text-3xl font-black mb-10 text-center text-[#8799E8]">⭐ 幹部表現與評價</h2>
+                                    <div className="space-y-12">
                                         {officers.map(off => (
-                                            <div key={off.id} className="flex flex-col xl:flex-row xl:items-center gap-4 p-6 rounded-[2.5rem] border-2 border-slate-50 hover:border-slate-100 hover:bg-[#FFFAF0]/30 transition-all duration-300">
-                                                {/* 幹部名稱 (字體加大) */}
-                                                <div className="flex items-center gap-4 w-full xl:w-72 shrink-0">
-                                                    <span className="bg-[#C7CEEA] text-indigo-800 text-[10px] font-black px-4 py-1.5 rounded-full shadow-sm">
+                                            <div key={off.id} className="flex flex-col xl:flex-row gap-6 p-6 rounded-[3rem] border-2 border-slate-50 hover:border-slate-100 hover:bg-white transition-all duration-300">
+                                                {/* 職務資訊 - 大字體 */}
+                                                <div className="flex flex-col justify-center xl:w-72 shrink-0">
+                                                    <h3 className="font-black text-5xl text-indigo-700 tracking-tighter mb-2">
                                                         {off.role}
-                                                    </span>
-                                                    <span className="font-black text-3xl text-slate-700 tracking-tight">
-                                                        {off.name}
-                                                    </span>
+                                                    </h3>
+                                                    <div className="flex items-center gap-2 text-slate-400 font-black">
+                                                        <span className="bg-slate-100 px-3 py-0.5 rounded-full text-xs">現任：{off.name}</span>
+                                                        <span className="text-xs">#{off.seatNo}</span>
+                                                    </div>
                                                 </div>
                                                 
-                                                {/* 遊戲血條 (僅顯示文字) */}
-                                                <div className="flex flex-1 items-stretch rounded-3xl overflow-hidden border-4 border-white shadow-xl min-h-[80px]">
-                                                    {RATING_OPTIONS.map((opt, idx) => {
-                                                        const isSelected = userResponse.evaluations?.[off.id] === opt.val;
-                                                        return (
-                                                            <button 
-                                                                key={opt.val} 
-                                                                onClick={() => setUserResponse({...userResponse, evaluations: {...userResponse.evaluations, [off.id]: opt.val}})}
-                                                                className={`health-segment flex-1 flex items-center justify-center p-3 border-r-2 border-white/20 last:border-r-0 ${isSelected ? `${opt.activeColor} ${opt.activeText} scale-[1.03] z-10 shadow-inner` : `${opt.color} ${opt.textColor} opacity-60 hover:opacity-100`}`}
-                                                            >
-                                                                <span className="text-base font-black text-center leading-tight">
-                                                                    {opt.label}
-                                                                </span>
-                                                            </button>
-                                                        );
-                                                    })}
+                                                {/* 遊戲血條 - 文字不分行、寬度自適應、可滑動 */}
+                                                <div className="flex-1 overflow-hidden">
+                                                    <div className="flex items-stretch rounded-3xl overflow-x-auto no-scrollbar border-4 border-white shadow-xl min-h-[90px] bg-white">
+                                                        {RATING_OPTIONS.map((opt) => {
+                                                            const isSelected = userResponse.evaluations?.[off.id] === opt.val;
+                                                            return (
+                                                                <button 
+                                                                    key={opt.val} 
+                                                                    onClick={() => setUserResponse({...userResponse, evaluations: {...userResponse.evaluations, [off.id]: opt.val}})}
+                                                                    className={`health-segment flex-none flex items-center justify-center px-8 border-r-2 border-white/20 last:border-r-0 ${isSelected ? `${opt.activeColor} ${opt.activeText} scale-[1.03] z-10 shadow-inner` : `${opt.color} ${opt.textColor} opacity-60 hover:opacity-100`}`}
+                                                                >
+                                                                    <span className="text-base sm:text-lg font-black tracking-tight">
+                                                                        {opt.label}
+                                                                    </span>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
                                                 </div>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
                                 <div className="flex justify-end mb-24 px-4">
-                                    <button onClick={() => setStep('pref')} className="bg-[#B5EAD7] text-emerald-800 font-black py-6 px-20 rounded-full shadow-2xl border-4 border-white hover:scale-105 active:scale-95 transition-all text-xl">
-                                        下一步：志願排序
-                                    </button>
+                                    <button onClick={() => setStep('pref')} className="bg-[#B5EAD7] text-emerald-800 font-black py-6 px-20 rounded-full shadow-2xl border-4 border-white hover:scale-105 active:scale-95 transition-all text-xl">下一步：志願排序</button>
                                 </div>
                             </div>
                         )}
@@ -526,18 +444,16 @@
                             <div className="animate-in fade-in slide-in-from-bottom-4">
                                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                                     <div className="lg:col-span-4 bg-white p-8 rounded-[4rem] border-4 border-white lg:sticky lg:top-28 shadow-xl text-center">
-                                        <h3 className="text-xl font-black text-[#8799E8] mb-6">可選職務</h3>
-                                        <div className="flex flex-wrap gap-3 p-6 bg-[#FFFAF0] rounded-[2.5rem] min-h-[200px] border-2 border-dashed border-slate-100 no-scrollbar" onDragOver={(e)=>e.preventDefault()} onDrop={(e)=>handleDrop(e,'pool')}>
+                                        <h3 className="text-xl font-black text-[#8799E8] mb-6 font-black">可選職務</h3>
+                                        <div className="flex flex-wrap gap-3 p-6 bg-[#FFFAF0] rounded-[2.5rem] min-h-[200px] border-2 border-dashed border-slate-100" onDragOver={(e)=>e.preventDefault()} onDrop={(e)=>handleDrop(e,'pool')}>
                                             {availableRoles.map(r => (
-                                                <div key={r} draggable onDragStart={(e)=>setDraggedItem({type:'pool',value:r})} className="bg-white border-2 border-[#C7CEEA] px-6 py-3 rounded-2xl font-black text-base text-[#8799E8] cursor-grab shadow-sm active:scale-95 transition flex items-center">
-                                                    <span className="mr-3 opacity-30">⠿</span> {r}
-                                                </div>
+                                                <div key={r} draggable onDragStart={(e)=>setDraggedItem({type:'pool',value:r})} className="bg-white border-2 border-[#C7CEEA] px-6 py-3 rounded-2xl font-black text-base text-[#8799E8] cursor-grab shadow-sm active:scale-95 transition flex items-center"><span className="mr-3 opacity-30">⠿</span> {r}</div>
                                             ))}
                                             {availableRoles.length === 0 && <div className="text-slate-300 italic py-10 w-full font-black">職務已全數排入</div>}
                                         </div>
                                     </div>
                                     <div className="lg:col-span-8 bg-white p-8 sm:p-12 rounded-[4rem] border-4 border-white shadow-xl">
-                                        <h3 className="text-2xl font-black mb-8 text-center text-slate-800">下學期志願排序 (前 5 名為必填)</h3>
+                                        <h3 className="text-2xl font-black mb-8 text-center text-slate-800">下學期志願排序 (前 5 名必填)</h3>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                                             {userResponse.preferences.map((p, i) => (
                                                 <div key={i} onDragOver={(e)=>e.preventDefault()} onDrop={(e)=>handleDrop(e,'slot',i)} className={`flex items-center gap-5 p-6 rounded-[2.5rem] border-2 transition-all ${i < 5 ? 'bg-lime-50/50 border-lime-200' : 'bg-[#FFFAF0] border-transparent'}`}>
@@ -551,12 +467,12 @@
                                     </div>
                                 </div>
                                 <div className="flex justify-between mt-16 mb-24 px-4">
-                                    <button onClick={() => setStep('eval')} className="text-[#C7CEEA] font-black underline hover:text-[#8799E8] text-lg">← 返回修改評分</button>
+                                    <button onClick={() => setStep('eval')} className="text-[#C7CEEA] font-black underline text-lg">← 修改評分</button>
                                     <button onClick={() => {
                                         const filled = userResponse.preferences.filter(p=>p);
                                         if (filled.length < 5) { alert("請至少選填前 5 名志願！"); return; }
-                                        setModal({ show: true, title: '確認送出', message: '您填寫的評分與志願將同步至雲端，老師將依此進行統計。', type: 'info', onConfirm: saveToDB });
-                                    }} className="bg-[#B5EAD7] text-emerald-800 font-black py-6 px-20 rounded-full shadow-2xl border-4 border-white hover:scale-105 transition-all text-xl">確認儲存並送出</button>
+                                        setModal({ show: true, title: '確認送出', message: '您填寫的評分與志願將同步至雲端庫。', type: 'info', onConfirm: saveToDB });
+                                    }} className="bg-[#B5EAD7] text-emerald-800 font-black py-6 px-20 rounded-full shadow-2xl border-4 border-white text-xl">確認儲存並送出</button>
                                 </div>
                             </div>
                         )}
@@ -564,11 +480,18 @@
                         {step === 'waiting' && (
                             <div className="text-center pt-10">
                                 <div className="bg-white p-20 rounded-[5rem] shadow-2xl border-4 border-white max-w-2xl mx-auto animate-in zoom-in">
-                                    <div className="text-7xl mb-8">✨</div>
-                                    <h2 className="text-4xl font-black text-slate-800 mb-8">填寫完成！</h2>
-                                    <p className="text-slate-500 font-bold mb-12 text-lg leading-relaxed"> Hi {user?.displayName}，感謝您的回饋。<br/>系統已同步您的選擇。在票選結束前，您仍可以重新登入修改內容。 </p>
-                                    <button onClick={() => setStep('eval')} className="bg-[#FFFAF0] text-[#C7CEEA] font-black py-4 px-12 rounded-full border-2 border-[#C7CEEA]/20 hover:bg-[#C7CEEA] hover:text-white transition-all shadow-sm">返回檢視填答</button>
+                                    <div className="text-7xl mb-8">✨</div><h2 className="text-4xl font-black text-slate-800 mb-8">填寫完成！</h2>
+                                    <p className="text-slate-500 font-bold mb-12 text-lg"> Hi {user?.displayName}，感謝您的回饋。系統已同步您的選擇。 </p>
+                                    <button onClick={() => setStep('eval')} className="bg-[#FFFAF0] text-[#C7CEEA] font-black py-4 px-12 rounded-full border-2 border-[#C7CEEA]/20 hover:bg-[#C7CEEA] hover:text-white transition-all">返回檢視填答</button>
                                 </div>
+                            </div>
+                        )}
+
+                        {step === 'unauthorized' && (
+                            <div className="bg-white p-10 rounded-[4rem] shadow-sm border-4 border-white max-w-md mx-auto mt-10 text-center animate-in zoom-in">
+                                <div className="text-5xl mb-6">🚫</div><h2 className="text-3xl font-black text-rose-400 mb-4">比對失敗</h2>
+                                <p className="text-slate-400 font-bold mb-8">您的 Google 名稱「{user?.displayName}」不在幹部名單中。</p>
+                                <button onClick={handleLogout} className="w-full bg-slate-100 py-5 rounded-[2.5rem] font-black text-slate-400">更換帳號</button>
                             </div>
                         )}
                     </main>
