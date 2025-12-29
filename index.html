@@ -21,6 +21,8 @@
         .cursor-grab { cursor: grab; }
         .cursor-grabbing { cursor: grabbing; }
         .login-card:hover { transform: translateY(-5px); transition: all 0.3s ease; }
+        /* 遊戲血條過渡動畫 */
+        .health-segment { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
     </style>
 </head>
 <body class="bg-[#FFFAF0] text-slate-700">
@@ -55,11 +57,11 @@
 
         // --- 2. 常數 ---
         const RATING_OPTIONS = [
-            { val: -1, score: "-1", label: "表現不好", color: "bg-[#FFB7B2]", activeColor: "bg-[#FF8B8B]", border: "border-[#FFB7B2]", textColor: "text-rose-900" },
-            { val: 0, score: "+0", label: "被動懶散", color: "bg-[#FFDAC1]", activeColor: "bg-[#FFC49F]", border: "border-[#FFDAC1]", textColor: "text-orange-900" },
-            { val: 1, score: "+1", label: "偶爾完成", color: "bg-[#FFF9C4]", activeColor: "bg-[#FFF176]", border: "border-[#FFF9C4]", textColor: "text-yellow-900" },
-            { val: 2, score: "+2", label: "穩定表現", color: "bg-[#B5EAD7]", activeColor: "bg-[#8DE2C1]", border: "border-[#B5EAD7]", textColor: "text-emerald-900" },
-            { val: 3, score: "+3", label: "主動積極", color: "bg-[#C7CEEA]", activeColor: "bg-[#A2B2FC]", border: "border-[#C7CEEA]", textColor: "text-indigo-900" }
+            { val: -1, score: "-1", label: "表現不好，邊做邊玩", color: "bg-rose-100", activeColor: "bg-rose-400", border: "border-rose-200", textColor: "text-rose-900", activeText: "text-white" },
+            { val: 0, score: "+0", label: "被動、要做不做", color: "bg-orange-100", activeColor: "bg-orange-400", border: "border-orange-200", textColor: "text-orange-900", activeText: "text-white" },
+            { val: 1, score: "+1", label: "偶爾做，比沒做還好一點", color: "bg-amber-100", activeColor: "bg-amber-400", border: "border-amber-200", textColor: "text-amber-900", activeText: "text-white" },
+            { val: 2, score: "+2", label: "常常做，大部份都有完成", color: "bg-emerald-100", activeColor: "bg-emerald-400", border: "border-emerald-200", textColor: "text-emerald-900", activeText: "text-white" },
+            { val: 3, score: "+3", label: "都會主動去做，都按時完成", color: "bg-indigo-100", activeColor: "bg-indigo-500", border: "border-indigo-200", textColor: "text-indigo-900", activeText: "text-white" }
         ];
 
         function App() {
@@ -80,8 +82,6 @@
             const [availableRoles, setAvailableRoles] = useState([]);
             const [draggedItem, setDraggedItem] = useState(null);
             const [isActionLoading, setIsActionLoading] = useState(false);
-            
-            // 新增篩選狀態
             const [volunteerRankFilter, setVolunteerRankFilter] = useState(1);
 
             useEffect(() => {
@@ -288,7 +288,7 @@
                         </div>
                     </header>
 
-                    <main className="max-w-6xl mx-auto p-4 mt-8">
+                    <main className="max-w-7xl mx-auto p-4 mt-8">
                         {step === 'login' && (
                             <div className="flex flex-col md:flex-row gap-8 justify-center items-stretch mt-10 px-4">
                                 <div className="login-card flex-1 bg-white p-10 rounded-[4rem] shadow-xl border-t-8 border-[#C7CEEA] text-center flex flex-col justify-between">
@@ -319,8 +319,7 @@
                                 <div className="text-5xl mb-6">🚫</div>
                                 <h2 className="text-3xl font-black text-rose-400 mb-4">登入失敗</h2>
                                 <p className="text-slate-400 font-bold mb-8">
-                                    您的 Google 名稱「{user?.displayName}」不在目前的幹部名單中。<br/><br/>
-                                    <span className="text-xs">請聯繫老師將您的姓名加入名單，<br/>或檢查登入帳號是否正確。</span>
+                                    您的 Google 名稱「{user?.displayName}」不在目前的幹部名單中。
                                 </p>
                                 <button onClick={handleLogout} className="w-full bg-slate-100 py-5 rounded-[2.5rem] font-black text-slate-400 hover:bg-slate-200 transition">更換帳號</button>
                             </div>
@@ -358,27 +357,24 @@
                                                     <button onClick={()=>setEditList([...editList,{seatNo:'',role:'',name:''}])} className="text-xs font-bold text-indigo-400 p-2 mt-2">+ 增加名單</button>
                                                 </div>
                                             )}
-                                            <div className="flex gap-4 mt-6">
-                                                {isAdminMode === 'paste' && <button onClick={()=>{const lines=pasteContent.split('\n').filter(l=>l.trim()); setEditList(lines.map(l=>{const p=l.split(/\t| /).filter(x=>x); return {seatNo:p[0]||'',role:p[1]||'',name:p[2]||''};})); setIsAdminMode('manual');}} className="flex-1 bg-[#C7CEEA] text-white py-5 rounded-3xl font-black shadow-lg">解析內容</button>}
-                                                <button onClick={async ()=>{
-                                                    setIsActionLoading(true);
-                                                    const batch = db.batch();
-                                                    const col = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('officers');
-                                                    const snap = await col.get();
-                                                    snap.docs.forEach(d => batch.delete(d.ref));
-                                                    editList.forEach((o, i) => { if (o.name) { const newDoc = col.doc(); batch.set(newDoc, { ...o, sortId: i + 1 }); } });
-                                                    await batch.commit();
-                                                    setIsActionLoading(false);
-                                                    alert("儲存成功");
-                                                }} className="flex-1 bg-[#B5EAD7] text-emerald-800 py-5 rounded-3xl font-black shadow-lg">{isActionLoading ? '儲存中...' : '儲存名單'}</button>
-                                            </div>
+                                            <button onClick={async ()=>{
+                                                setIsActionLoading(true);
+                                                const batch = db.batch();
+                                                const col = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('officers');
+                                                const snap = await col.get();
+                                                snap.docs.forEach(d => batch.delete(d.ref));
+                                                editList.forEach((o, i) => { if (o.name) { const newDoc = col.doc(); batch.set(newDoc, { ...o, sortId: i + 1 }); } });
+                                                await batch.commit();
+                                                setIsActionLoading(false);
+                                                alert("儲存成功");
+                                            }} className="w-full bg-[#B5EAD7] text-emerald-800 py-5 rounded-3xl font-black shadow-lg mt-4">{isActionLoading ? '儲存中...' : '儲存名單'}</button>
                                         </div>
                                     )}
 
                                     {adminTab === 'progress' && (
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-left font-bold text-sm border-separate border-spacing-y-2">
-                                                <thead><tr className="text-slate-400">
+                                                <thead><tr className="text-slate-400 text-[10px] uppercase tracking-widest">
                                                     <th className="py-2 pl-4 w-20 text-center">座號</th>
                                                     <th>姓名</th>
                                                     <th className="text-center">填答狀態</th>
@@ -396,17 +392,11 @@
                                                             <td className="py-4 text-slate-600 font-black">{student.name}</td>
                                                             <td className="py-4">
                                                                 <div className="flex gap-2 justify-center">
-                                                                    <div className={`px-4 py-1.5 rounded-xl text-[10px] font-black tracking-wider transition ${hasEval ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-300'}`}>
-                                                                        評分
-                                                                    </div>
-                                                                    <div className={`px-4 py-1.5 rounded-xl text-[10px] font-black tracking-wider transition ${hasPref ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-300'}`}>
-                                                                        志願
-                                                                    </div>
+                                                                    <div className={`px-4 py-1.5 rounded-xl text-[10px] font-black tracking-wider transition ${hasEval ? 'bg-emerald-100 text-emerald-600 shadow-sm' : 'bg-slate-100 text-slate-300'}`}>評分</div>
+                                                                    <div className={`px-4 py-1.5 rounded-xl text-[10px] font-black tracking-wider transition ${hasPref ? 'bg-emerald-100 text-emerald-600 shadow-sm' : 'bg-slate-100 text-slate-300'}`}>志願</div>
                                                                 </div>
                                                             </td>
-                                                            <td className="py-4 text-right pr-4 text-[10px] text-slate-300 font-medium">
-                                                                {resp?.lastUpdated ? new Date(resp.lastUpdated).toLocaleString() : '-'}
-                                                            </td>
+                                                            <td className="py-4 text-right pr-4 text-[10px] text-slate-300 font-medium">{resp?.lastUpdated ? new Date(resp.lastUpdated).toLocaleString() : '-'}</td>
                                                         </tr>
                                                     );
                                                 })}</tbody>
@@ -440,45 +430,35 @@
 
                                     {adminTab === 'volunteers' && (
                                         <div className="space-y-8">
-                                            {/* 志願序篩選器 */}
                                             <div className="flex flex-col sm:flex-row justify-between items-center bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2 border-white gap-4">
                                                 <div>
                                                     <h4 className="font-black text-slate-700">志願序篩選</h4>
-                                                    <p className="text-[10px] text-slate-400 font-bold">查看哪些學生將此職務放在第 {volunteerRankFilter} 志願</p>
+                                                    <p className="text-[10px] text-slate-400 font-bold">目前顯示第 {volunteerRankFilter} 志願名單</p>
                                                 </div>
                                                 <div className="flex gap-2">
                                                     {[1, 2, 3, 4, 5].map(rank => (
-                                                        <button 
-                                                            key={rank} 
-                                                            onClick={() => setVolunteerRankFilter(rank)}
-                                                            className={`w-10 h-10 rounded-full font-black text-xs transition-all ${volunteerRankFilter === rank ? 'bg-[#C7CEEA] text-white shadow-lg scale-110' : 'bg-white text-slate-300 border border-slate-100 hover:text-slate-400'}`}
-                                                        >
+                                                        <button key={rank} onClick={() => setVolunteerRankFilter(rank)}
+                                                            className={`w-10 h-10 rounded-full font-black text-xs transition-all ${volunteerRankFilter === rank ? 'bg-[#C7CEEA] text-white shadow-lg scale-110' : 'bg-white text-slate-300 border border-slate-100'}`}>
                                                             {rank}
                                                         </button>
                                                     ))}
                                                 </div>
                                             </div>
-
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-sm">
                                                 {Object.entries(volunteerStats).map(([role, list]) => {
                                                     const filtered = list.filter(s => s.rank === volunteerRankFilter);
                                                     return (
                                                         <div key={role} className="bg-slate-50 p-6 rounded-[2.5rem] border-2 border-white flex flex-col">
-                                                            <div className="font-black text-slate-600 mb-4 flex justify-between items-center">
-                                                                {role}
-                                                                <span className="text-[10px] text-indigo-400 bg-indigo-50 px-3 py-1 rounded-full">{filtered.length} 人</span>
-                                                            </div>
+                                                            <div className="font-black text-slate-600 mb-4 flex justify-between items-center">{role}<span className="text-[10px] text-indigo-400 bg-indigo-50 px-3 py-1 rounded-full">{filtered.length} 人</span></div>
                                                             <div className="space-y-2 flex-1">
                                                                 {filtered.map((s, i) => (
                                                                     <div key={i} className="bg-white p-3 rounded-2xl text-xs font-bold flex justify-between items-center shadow-sm border border-slate-50">
                                                                         <div className="flex items-center gap-2">
-                                                                            <span className="text-[10px] text-slate-300">#{s.seatNo}</span>
-                                                                            <span>{s.name}</span>
+                                                                            <span className="text-[10px] text-slate-300">#{s.seatNo}</span><span>{s.name}</span>
                                                                         </div>
-                                                                        <span className="text-[10px] text-emerald-400 font-black">第 {s.rank} 志願</span>
                                                                     </div>
                                                                 ))}
-                                                                {filtered.length === 0 && <div className="text-slate-200 italic py-6 text-center text-xs font-bold">目前無人選填</div>}
+                                                                {filtered.length === 0 && <div className="text-slate-200 italic py-6 text-center text-xs font-bold">暫無人選</div>}
                                                             </div>
                                                         </div>
                                                     );
@@ -490,27 +470,34 @@
                             </div>
                         )}
 
-                        {/* 填答流程 */}
+                        {/* 學生填答 - 幹部評分 (血條樣式) */}
                         {step === 'eval' && (
                             <div className="animate-in fade-in slide-in-from-bottom-4">
-                                <div className="bg-white p-8 sm:p-12 rounded-[4rem] border-4 border-white mb-8 shadow-sm">
-                                    <h2 className="text-2xl font-black mb-4 flex items-center">⭐ 現任幹部表現評分</h2>
-                                    <p className="text-slate-400 font-bold mb-8 text-sm italic">※ 點擊分數即可給予評價。</p>
-                                    <div className="space-y-10">
+                                <div className="bg-white p-6 sm:p-10 rounded-[3rem] border-4 border-white mb-8 shadow-sm">
+                                    <h2 className="text-2xl font-black mb-6 flex items-center">⭐ 幹部表現評分</h2>
+                                    <div className="space-y-4">
                                         {officers.map(off => (
-                                            <div key={off.id} className="pb-10 border-b-2 border-slate-50 last:border-0">
-                                                <div className="flex items-center gap-3 mb-6">
-                                                    <span className="bg-[#C7CEEA] text-indigo-800 text-[10px] font-black px-4 py-1 rounded-full shadow-sm">{off.role}</span>
-                                                    <span className="font-black text-2xl text-slate-700">{off.name}</span>
+                                            <div key={off.id} className="flex flex-col lg:flex-row lg:items-center gap-4 p-4 rounded-3xl border border-slate-50 hover:bg-[#FFFAF0]/50 transition-colors">
+                                                {/* 幹部資訊 */}
+                                                <div className="flex items-center gap-3 w-full lg:w-48 shrink-0">
+                                                    <span className="bg-[#C7CEEA] text-indigo-800 text-[10px] font-black px-3 py-1 rounded-full whitespace-nowrap">{off.role}</span>
+                                                    <span className="font-black text-slate-700 truncate">{off.name}</span>
                                                 </div>
-                                                <div className="grid grid-cols-5 gap-2 sm:gap-4">
-                                                    {RATING_OPTIONS.map(opt => {
+                                                
+                                                {/* 血條評分方格 */}
+                                                <div className="flex flex-1 items-stretch rounded-2xl overflow-hidden border-2 border-white shadow-sm h-20 sm:h-16">
+                                                    {RATING_OPTIONS.map((opt, idx) => {
                                                         const isSelected = userResponse.evaluations?.[off.id] === opt.val;
                                                         return (
-                                                            <button key={opt.val} onClick={() => setUserResponse({...userResponse, evaluations: {...userResponse.evaluations, [off.id]: opt.val}})} 
-                                                                    className={`flex flex-col items-center justify-center py-5 rounded-[2rem] border-2 transition-all ${isSelected ? `${opt.activeColor} ${opt.textColor} border-white shadow-lg -translate-y-1` : `bg-white ${opt.textColor} ${opt.border} opacity-40 hover:opacity-100`}`}>
-                                                                <span className="text-xl font-black mb-1">{opt.score}</span>
-                                                                <span className="text-[10px] font-bold text-center leading-tight h-8 flex items-center">{opt.label}</span>
+                                                            <button 
+                                                                key={opt.val} 
+                                                                onClick={() => setUserResponse({...userResponse, evaluations: {...userResponse.evaluations, [off.id]: opt.val}})}
+                                                                className={`health-segment flex-1 flex flex-col items-center justify-center p-1 border-r border-white/30 last:border-r-0 ${isSelected ? `${opt.activeColor} ${opt.activeText} scale-[1.02] z-10 shadow-inner` : `${opt.color} ${opt.textColor} opacity-60 hover:opacity-100`}`}
+                                                            >
+                                                                <span className="text-sm font-black mb-0.5">{opt.score}</span>
+                                                                <span className="text-[8px] sm:text-[9px] font-bold text-center leading-tight px-1 line-clamp-2">
+                                                                    {opt.label}
+                                                                </span>
                                                             </button>
                                                         );
                                                     })}
@@ -528,29 +515,23 @@
                         {step === 'pref' && (
                             <div className="animate-in fade-in slide-in-from-bottom-4">
                                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                                    <div className="lg:col-span-4 bg-white p-8 rounded-[3.5rem] border-4 border-white lg:sticky lg:top-28 shadow-sm">
-                                        <h3 className="text-lg font-black text-[#8799E8] mb-4">待選職務清單</h3>
+                                    <div className="lg:col-span-4 bg-white p-8 rounded-[3.5rem] border-4 border-white lg:sticky lg:top-28 shadow-sm text-center">
+                                        <h3 className="text-lg font-black text-[#8799E8] mb-4">待選清單</h3>
                                         <div className="flex flex-wrap gap-3 p-4 bg-[#FFFAF0] rounded-3xl min-h-[150px]" onDragOver={(e)=>e.preventDefault()} onDrop={(e)=>handleDrop(e,'pool')}>
                                             {availableRoles.map(r => (
-                                                <div key={r} draggable onDragStart={(e)=>setDraggedItem({type:'pool',value:r})} className="bg-white border-2 border-[#C7CEEA] px-5 py-3 rounded-2xl font-black text-sm text-[#8799E8] cursor-grab shadow-sm active:scale-95 transition flex items-center">
-                                                    <span className="mr-2 opacity-30 text-xs">⠿</span> {r}
-                                                </div>
+                                                <div key={r} draggable onDragStart={(e)=>setDraggedItem({type:'pool',value:r})} className="bg-white border-2 border-[#C7CEEA] px-4 py-2 rounded-2xl font-black text-xs text-[#8799E8] cursor-grab shadow-sm transition-transform active:scale-95">⠿ {r}</div>
                                             ))}
-                                            {availableRoles.length === 0 && <div className="text-slate-300 italic text-center w-full py-10">職務已選完</div>}
+                                            {availableRoles.length === 0 && <div className="text-slate-300 italic py-10 w-full">職務已選完</div>}
                                         </div>
                                     </div>
                                     <div className="lg:col-span-8 bg-white p-8 sm:p-12 rounded-[4rem] border-4 border-white shadow-sm">
-                                        <h3 className="text-xl font-black mb-6">下學期志願排序 (前 5 名必填)</h3>
+                                        <h3 className="text-xl font-black mb-6 text-center">志願排序 (前 5 名必填)</h3>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                             {userResponse.preferences.map((p, i) => (
                                                 <div key={i} onDragOver={(e)=>e.preventDefault()} onDrop={(e)=>handleDrop(e,'slot',i)} className={`flex items-center gap-4 p-5 rounded-[2.5rem] border-2 transition-all ${i < 5 ? 'bg-[#E2F0CB]/30 border-[#E2F0CB]' : 'bg-[#FFFAF0] border-transparent'}`}>
                                                     <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-white shrink-0 shadow-sm ${i < 5 ? 'bg-[#B5EAD7]' : 'bg-[#C7CEEA]'}`}>{i + 1}</div>
                                                     <div className="flex-1 min-h-[50px] flex items-center">
-                                                        {p ? (
-                                                            <div draggable onDragStart={(e)=>setDraggedItem({type:'slot',value:p,index:i})} className="bg-white border-2 border-[#C7CEEA] px-5 py-3 rounded-2xl font-black text-[#8799E8] cursor-grab shadow-sm w-full flex justify-between items-center animate-in zoom-in duration-200">
-                                                                <span>{p}</span><span className="opacity-20 text-xs">⠿</span>
-                                                            </div>
-                                                        ) : <span className="text-slate-200 font-bold italic ml-2">拖曳職務至此</span>}
+                                                        {p ? <div draggable onDragStart={(e)=>setDraggedItem({type:'slot',value:p,index:i})} className="bg-white border-2 border-[#C7CEEA] px-5 py-3 rounded-2xl font-black text-[#8799E8] cursor-grab shadow-sm w-full flex justify-between items-center"><span>{p}</span><span className="opacity-20 text-xs">⠿</span></div> : <span className="text-slate-200 font-bold italic ml-2">拖曳至此</span>}
                                                     </div>
                                                 </div>
                                             ))}
@@ -562,18 +543,18 @@
                                     <button onClick={() => {
                                         const filled = userResponse.preferences.filter(p=>p);
                                         if (filled.length < 5) { alert("請至少選填前 5 名志願！"); return; }
-                                        setModal({ show: true, title: '填答送出', message: '確定要儲存目前的紀錄嗎？', type: 'info', onConfirm: saveToDB });
-                                    }} className="bg-[#B5EAD7] text-emerald-800 font-black py-5 px-16 rounded-full shadow-xl border-4 border-white hover:scale-105 transition">儲存並送出</button>
+                                        setModal({ show: true, title: '確認送出', message: '確定要儲存目前的紀錄嗎？', type: 'info', onConfirm: saveToDB });
+                                    }} className="bg-[#B5EAD7] text-emerald-800 font-black py-5 px-16 rounded-full shadow-xl border-4 border-white">儲存並送出</button>
                                 </div>
                             </div>
                         )}
 
                         {step === 'waiting' && (
                             <div className="text-center pt-10">
-                                <div className="bg-white p-16 sm:p-24 rounded-[5rem] shadow-xl border-4 border-white max-w-xl mx-auto animate-in zoom-in">
+                                <div className="bg-white p-16 rounded-[5rem] shadow-xl border-4 border-white max-w-xl mx-auto">
                                     <div className="text-6xl mb-8">🎉</div>
                                     <h2 className="text-4xl font-black text-slate-800 mb-6">填寫成功！</h2>
-                                    <p className="text-slate-400 font-bold mb-10 leading-relaxed"> Hi {user?.displayName}，感謝您的回饋。系統已儲存您的選擇。 </p>
+                                    <p className="text-slate-400 font-bold mb-10 leading-relaxed"> Hi {user?.displayName}，系統已儲存您的選擇。 </p>
                                     <button onClick={() => setStep('eval')} className="text-[#C7CEEA] font-black underline hover:text-[#8799E8]">返回填答頁面</button>
                                 </div>
                             </div>
