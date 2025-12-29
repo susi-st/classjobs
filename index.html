@@ -89,6 +89,7 @@
             const [isActionLoading, setIsActionLoading] = useState(false);
             
             const [topNFilter, setTopNFilter] = useState(3);
+            const [showAwardModal, setShowAwardModal] = useState(false);
 
             useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
@@ -174,7 +175,7 @@
             const ratingStats = useMemo(() => {
                 const stats = {};
                 officers.forEach(off => {
-                    stats[off.id] = { name: off.name, role: off.role, counts: { "-1": 0, "0": 0, "1": 0, "2": 0, "3": 0 } };
+                    stats[off.id] = { name: off.name, seatNo: off.seatNo, role: off.role, counts: { "-1": 0, "0": 0, "1": 0, "2": 0, "3": 0 } };
                 });
                 allStudentResponses.forEach(resp => {
                     const evals = resp.evaluations || {};
@@ -194,16 +195,43 @@
                     const prefs = resp.preferences || [];
                     prefs.forEach((role, idx) => {
                         if (role && stats[role] !== undefined) {
-                            stats[role].push({ 
-                                name: resp.name, 
-                                seatNo: resp.seatNo, 
-                                rank: idx + 1 
-                            });
+                            stats[role].push({ name: resp.name, seatNo: resp.seatNo, rank: idx + 1 });
                         }
                     });
                 });
                 return stats;
             }, [allStudentResponses]);
+
+            // --- 敘獎名單計算邏輯 ---
+            const awardList = useMemo(() => {
+                const list = [];
+                Object.entries(ratingStats).forEach(([id, info]) => {
+                    const counts = info.counts;
+                    // 找出最高票數 (眾數)
+                    let maxVotes = -1;
+                    let modeValue = null;
+                    
+                    // 從 +3 往回找，若票數相同優先採計高分
+                    ["3", "2", "1", "0", "-1"].forEach(val => {
+                        if (counts[val] > maxVotes) {
+                            maxVotes = counts[val];
+                            modeValue = Number(val);
+                        }
+                    });
+
+                    // 判斷眾數是否落在 +1 ~ +3
+                    if (modeValue >= 1) {
+                        list.push({
+                            seatNo: info.seatNo,
+                            awards: 1,
+                            role: info.role,
+                            fullName: `${info.name}(${info.seatNo})`
+                        });
+                    }
+                });
+                // 依照座號排序
+                return list.sort((a,b) => Number(a.seatNo) - Number(b.seatNo));
+            }, [ratingStats]);
 
             const handleGoogleLogin = async (entrance) => {
                 setTargetEntrance(entrance);
@@ -271,10 +299,30 @@
                 setModal({ show: true, title: '確認送出', message: '確定要儲存目前的紀錄嗎？', type: 'info', onConfirm: saveToDB });
             };
 
+            // 複製敘獎清單
+            const copyAwardList = () => {
+                const header = "座號\t敘獎次數\t職務\t姓名(座號)\t座號\n";
+                const content = awardList.map(a => `${a.seatNo}\t${a.awards}\t${a.role}\t${a.fullName}\t${a.seatNo}`).join("\n");
+                const textToCopy = header + content;
+                
+                const textArea = document.createElement("textarea");
+                textArea.value = textToCopy;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    alert("敘獎資料已複製！現在可以去 Google Sheet 貼上了。");
+                } catch (err) {
+                    alert("複製失敗，請手動選取文字。");
+                }
+                document.body.removeChild(textArea);
+            };
+
             if (loading) return <div className="min-h-screen flex items-center justify-center bg-[#FFFAF0] text-[#8799E8] font-black animate-pulse text-lg">系統載入中...</div>;
 
             return (
                 <div className="min-h-screen pb-10">
+                    {/* 彈窗 */}
                     {modal.show && (
                         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-[100] p-4 text-center">
                             <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-sm w-full border-4 border-white overflow-hidden">
@@ -287,6 +335,50 @@
                                         <><button onClick={() => setModal({show:false})} className="flex-1 py-4 bg-slate-100 text-slate-400 font-black rounded-3xl">取消</button>
                                           <button onClick={modal.onConfirm} className="flex-1 py-4 bg-[#B5EAD7] text-emerald-800 font-black rounded-3xl">確定</button></>
                                     ) : <button onClick={() => setModal({show:false})} className={`w-full py-4 text-white font-black rounded-3xl ${modal.type === 'error' ? 'bg-rose-400' : 'bg-[#C7CEEA]'}`}>知道了</button>}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 敘獎名單彈窗 */}
+                    {showAwardModal && (
+                        <div className="fixed inset-0 bg-black/40 backdrop-blur-md flex items-center justify-center z-[100] p-4">
+                            <div className="bg-white rounded-[3rem] shadow-2xl max-w-2xl w-full border-4 border-white max-h-[85vh] flex flex-col animate-in slide-in-from-top-4 duration-300">
+                                <div className="p-8 text-center border-b border-slate-50">
+                                    <h3 className="text-3xl font-black text-indigo-700 mb-2">🏆 敘獎名單建議</h3>
+                                    <p className="text-slate-400 font-bold">自動篩選最高票數落在 +1 ~ +3 的幹部資料</p>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-6 no-scrollbar">
+                                    {awardList.length > 0 ? (
+                                        <table className="w-full text-left font-bold text-sm">
+                                            <thead>
+                                                <tr className="text-slate-400 border-b border-slate-100">
+                                                    <th className="py-2">座號</th>
+                                                    <th>次數</th>
+                                                    <th>職務</th>
+                                                    <th>姓名(座號)</th>
+                                                    <th>座號</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="text-slate-600">
+                                                {awardList.map((a, i) => (
+                                                    <tr key={i} className="border-b border-slate-50 hover:bg-indigo-50/30">
+                                                        <td className="py-2.5">{a.seatNo}</td>
+                                                        <td>{a.awards}</td>
+                                                        <td>{a.role}</td>
+                                                        <td className="text-indigo-600">{a.fullName}</td>
+                                                        <td>{a.seatNo}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    ) : (
+                                        <div className="text-center py-20 text-slate-300 font-black italic">目前尚無符合敘獎標準的幹部</div>
+                                    )}
+                                </div>
+                                <div className="p-8 bg-slate-50 rounded-b-[3rem] flex gap-4">
+                                    <button onClick={() => setShowAwardModal(false)} className="flex-1 py-5 bg-white text-slate-400 font-black rounded-[2rem] border-2 border-slate-200">關閉</button>
+                                    <button onClick={copyAwardList} className="flex-[2] py-5 bg-[#B5EAD7] text-emerald-800 font-black rounded-[2rem] shadow-xl hover:scale-105 active:scale-95 transition-all">📋 複製資料 (貼回 Google Sheets)</button>
                                 </div>
                             </div>
                         </div>
@@ -388,26 +480,34 @@
                                     )}
 
                                     {adminTab === 'ratings' && (
-                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                            {officers.map(off => {
-                                                const stats = ratingStats[off.id]?.counts || {};
-                                                return (
-                                                    <div key={off.id} className="bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2 border-white shadow-sm">
-                                                        <div className="flex items-center gap-2 mb-4 font-black"><span className="bg-[#C7CEEA] text-white text-[10px] px-3 py-1 rounded-full">{off.role}</span><span className="text-slate-700 text-lg">{off.name}</span></div>
-                                                        <div className="grid grid-cols-5 gap-2">{RATING_OPTIONS.map(opt => (<div key={opt.val} className={`p-2 rounded-2xl flex flex-col items-center border-2 border-white ${opt.color}`}><span className="text-xl font-black">{stats[String(opt.val)] || 0}</span></div>))}</div>
-                                                    </div>
-                                                );
-                                            })}
+                                        <div className="animate-in fade-in">
+                                            <div className="flex justify-between items-center mb-10 bg-[#FFFAF0] p-6 rounded-[2rem] border-2 border-white">
+                                                <div>
+                                                    <h3 className="text-xl font-black text-slate-700">得票分佈統計</h3>
+                                                    <p className="text-xs text-slate-400 font-bold">查看每位幹部獲得的行為評價票數</p>
+                                                </div>
+                                                <button onClick={() => setShowAwardModal(true)} className="px-8 py-4 bg-indigo-500 text-white font-black rounded-3xl shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center gap-2">
+                                                    🏅 顯示敘獎名單建議
+                                                </button>
+                                            </div>
+                                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                                {officers.map(off => {
+                                                    const stats = ratingStats[off.id]?.counts || {};
+                                                    return (
+                                                        <div key={off.id} className="bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2 border-white shadow-sm">
+                                                            <div className="flex items-center gap-2 mb-4 font-black"><span className="bg-[#C7CEEA] text-white text-[10px] px-3 py-1 rounded-full">{off.role}</span><span className="text-slate-700 text-lg">{off.name}</span></div>
+                                                            <div className="grid grid-cols-5 gap-2">{RATING_OPTIONS.map(opt => (<div key={opt.val} className={`p-2 rounded-2xl flex flex-col items-center border-2 border-white ${opt.color}`}><span className="text-[10px] font-black opacity-50 mb-1">({opt.val >= 0 ? '+' : ''}{opt.val})</span><span className="text-xl font-black">{stats[String(opt.val)] || 0}</span></div>))}</div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
                                     )}
 
                                     {adminTab === 'volunteers' && (
                                         <div className="space-y-8 animate-in fade-in">
                                             <div className="flex flex-col sm:flex-row justify-between items-center bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2 border-white gap-4">
-                                                <div>
-                                                    <h4 className="font-black text-slate-700 text-lg">志願統計篩選功能</h4>
-                                                    <p className="text-[10px] text-slate-400 font-bold italic">顯示「列入前 {topNFilter} 志願」的學生名單</p>
-                                                </div>
+                                                <div><h4 className="font-black text-slate-700 text-lg">志願統計篩選功能</h4><p className="text-[10px] text-slate-400 font-bold italic">顯示「列入前 {topNFilter} 志願」的學生名單</p></div>
                                                 <div className="flex gap-2">
                                                     {[1, 2, 3, 4, 5].map(rank => (
                                                         <button 
@@ -420,27 +520,18 @@
                                                     ))}
                                                 </div>
                                             </div>
-
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
                                                 {ROLE_ORDER.map(role => {
                                                     const list = volunteerStats[role] || [];
-                                                    const filtered = list
-                                                        .filter(s => s.rank <= topNFilter)
-                                                        .sort((a,b) => a.rank - b.rank || Number(a.seatNo) - Number(b.seatNo));
-                                                        
+                                                    const filtered = list.filter(s => s.rank <= topNFilter).sort((a,b) => a.rank - b.rank || Number(a.seatNo) - Number(b.seatNo));
                                                     return (
                                                         <div key={role} className="bg-slate-50 p-5 rounded-[2rem] border-2 border-white flex flex-col min-h-[140px] hover:shadow-md transition-shadow">
-                                                            <div className="font-black text-slate-600 mb-3 flex justify-between items-center border-b border-white pb-2 text-lg">
-                                                                {role}
-                                                                <span className="text-[10px] text-indigo-500 bg-white px-3 py-1 rounded-full shadow-inner font-black">{filtered.length}</span>
-                                                            </div>
+                                                            <div className="font-black text-slate-600 mb-3 flex justify-between items-center border-b border-white pb-2 text-lg">{role}<span className="text-[10px] text-indigo-500 bg-white px-3 py-1 rounded-full shadow-inner font-black">{filtered.length}</span></div>
                                                             <div className="flex flex-wrap gap-2 flex-1 items-start">
                                                                 {filtered.map((s, i) => (
-                                                                    <div key={i} className="bg-white px-3 py-1.5 rounded-xl text-xs font-black shadow-sm border border-slate-50 flex items-center gap-1.5 transition-transform hover:scale-105">
+                                                                    <div key={i} className="bg-white px-3 py-1.5 rounded-xl text-xs font-black shadow-sm border border-slate-50 flex items-center gap-1.5">
                                                                         <span className="text-[9px] text-slate-300 font-medium">#{s.seatNo}</span>
-                                                                        <span className="text-slate-700">
-                                                                            {s.name}<span className={`ml-0.5 ${s.rank === 1 ? 'text-rose-400' : 'text-indigo-400'}`}>({s.rank})</span>
-                                                                        </span>
+                                                                        <span className="text-slate-700">{s.name}<span className={`ml-0.5 ${s.rank === 1 ? 'text-rose-400' : 'text-indigo-400'}`}>({s.rank})</span></span>
                                                                     </div>
                                                                 ))}
                                                                 {filtered.length === 0 && <div className="text-slate-200 italic py-6 text-center text-[10px] font-bold w-full">暫無候選人</div>}
