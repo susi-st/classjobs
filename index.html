@@ -166,19 +166,32 @@
                 });
             };
 
+            // 監聽並排序幹部名單
             useEffect(() => {
                 if (!user) return;
                 const unsub = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('officers').onSnapshot((snapshot) => {
                     const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    
+                    // 修正排序邏輯：優先使用 orderIndex，次要使用 originalRole 回推
                     data.sort((a, b) => {
-                        const idxA = ROLE_ORDER.indexOf(a.role);
-                        const idxB = ROLE_ORDER.indexOf(b.role);
+                        if (a.orderIndex !== undefined && b.orderIndex !== undefined) {
+                            return a.orderIndex - b.orderIndex;
+                        }
+                        const idxA = ROLE_ORDER.indexOf(a.originalRole || a.role);
+                        const idxB = ROLE_ORDER.indexOf(b.originalRole || b.role);
                         return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
                     });
-                    setOfficers(data);
-                    if (editList.length === 0) setEditList(data);
                     
-                    // 這裡的 availableRoles 改為顯示 ROLE_ORDER 中獨特的名稱（去掉數字）
+                    setOfficers(data);
+                    // 只有在編輯列表為空時才從資料庫載入（避免老師編輯到一半被覆蓋）
+                    if (editList.length === 0) {
+                        setEditList(data.map(item => ({
+                            seatNo: item.seatNo,
+                            role: item.originalRole || item.role,
+                            name: item.name
+                        })));
+                    }
+                    
                     const uniqueRoleTypes = [...new Set(ROLE_ORDER.map(r => normalizeRole(r)))];
                     const currentPrefs = userResponse.preferences || [];
                     setAvailableRoles(uniqueRoleTypes.filter(r => !currentPrefs.includes(r)));
@@ -206,7 +219,6 @@
                 });
 
                 const roleStats = {};
-                // 初始化統計對象時也去掉數字，以免統計失效
                 ROLE_ORDER.forEach(role => roleStats[normalizeRole(role)] = { r1: 0, r2: 0, r3: 0 });
 
                 allStudentResponses.forEach(resp => {
@@ -330,7 +342,7 @@
                     return;
                 }
                 const confirmMsg = filledCount < 16 ? "確定不多選幾個？萬一前五志願都沒選上，就交由老師安排囉~" : "確定要儲存目前的紀錄嗎？";
-                setModal({ show: true, title: '確認送出', message: confirmMsg, type: 'info', onConfirm: saveToDB });
+                setModal({ show: true, title: filledCount < 16 ? '溫馨小提醒' : '確認送出', message: confirmMsg, type: 'info', onConfirm: saveToDB });
             };
 
             const copyAwardList = () => {
@@ -464,16 +476,19 @@
                                                     if (o.name) { 
                                                         const newDoc = col.doc(); 
                                                         const order = ROLE_ORDER.indexOf(o.role);
-                                                        // 去掉數字後再寫入職務名稱 (正規化)
                                                         const cleanedRole = normalizeRole(o.role);
-                                                        batch.set(newDoc, { ...o, role: cleanedRole, originalRole: o.role, orderIndex: order === -1 ? 999 : order }); 
+                                                        batch.set(newDoc, { 
+                                                            ...o, 
+                                                            role: cleanedRole, 
+                                                            originalRole: o.role, 
+                                                            orderIndex: order === -1 ? 999 : order 
+                                                        }); 
                                                     } 
                                                 });
-                                                await batch.commit(); setIsActionLoading(false); alert("儲存成功。職務名稱已自動移除數字後綴以利統計。");
+                                                await batch.commit(); setIsActionLoading(false); alert("儲存成功。");
                                             }} className="w-full bg-[#B5EAD7] text-emerald-800 py-5 rounded-3xl font-black shadow-lg mt-4">{isActionLoading ? '儲存中...' : '儲存名單並排序'}</button>
                                         </div>
                                     )}
-
                                     {adminTab === 'progress' && (
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-left font-bold text-sm border-separate border-spacing-y-2">
@@ -494,7 +509,6 @@
                                             </table>
                                         </div>
                                     )}
-
                                     {adminTab === 'ratings' && (
                                         <div className="animate-in fade-in">
                                             <div className="flex justify-between items-center mb-10 bg-[#FFFAF0] p-6 rounded-[2rem] border-2 border-white">
@@ -514,7 +528,6 @@
                                             </div>
                                         </div>
                                     )}
-
                                     {adminTab === 'volunteers' && (
                                         <div className="space-y-8 animate-in fade-in">
                                             <div className="flex flex-col sm:flex-row justify-between items-center bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2 border-white gap-4">
