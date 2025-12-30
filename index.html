@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>班級幹部票選系統</title>
-    <!-- 優先載入樣式，提升載入速度感 -->
+    <!-- 優先載入樣式，提升載入體驗 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
@@ -16,7 +16,7 @@
         .battery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(8px, 1fr)); gap: 2px; width: 100%; }
         .battery-cell { height: 12px; border-radius: 2px; }
 
-        /* 靜態載入動畫：React 啟動前顯示 */
+        /* 靜態載入動畫 */
         #static-loader {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background-color: #FFFAF0; z-index: 9999;
@@ -50,7 +50,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
     <script type="text/babel">
-        // React 啟動後隱藏 Loading
+        // React 啟動後儘快隱藏 Loading
         const hideLoader = () => {
             const loader = document.getElementById('static-loader');
             if(loader) loader.classList.add('hidden-loader');
@@ -75,7 +75,7 @@
         const appId = "class-officer-system";
         const TEACHER_EMAIL = "susi@st.tc.edu.tw";
 
-        // 正規化職務名單 (移除數字)
+        // 正規化職務名單
         const ROLE_ORDER = [
             "班長", "副班長", "風紀", "學藝", "設備", "體育", "衛生", "環保",
             "總務", "資訊", "輔導", "服務", "健康", "禮貌", "圖書", "腳踏車"
@@ -83,13 +83,13 @@
 
         const normalizeRole = (roleName) => roleName ? roleName.toString().replace(/\d+$/, '').trim() : "";
 
-        // 評分選項：加深色彩對比與指定文字
+        // 評分選項：加強對比度
         const RATING_OPTIONS = [
-            { val: -1, label: "-1)表現不好，邊做邊玩", color: "bg-rose-300", activeColor: "bg-rose-700", textColor: "text-rose-950", activeText: "text-white" },
-            { val: 0, label: "+0)被動、要做不做", color: "bg-orange-300", activeColor: "bg-orange-700", textColor: "text-orange-950", activeText: "text-white" },
-            { val: 1, label: "+1)偶爾做，比沒做還好一點", color: "bg-amber-300", activeColor: "bg-amber-700", textColor: "text-amber-950", activeText: "text-white" },
-            { val: 2, label: "+2)常常做，大部份都有完成", color: "bg-emerald-300", activeColor: "bg-emerald-700", textColor: "text-emerald-950", activeText: "text-white" },
-            { val: 3, label: "+3)都會主動去做，都按時完成", color: "bg-indigo-300", activeColor: "bg-indigo-800", textColor: "text-indigo-950", activeText: "text-white" }
+            { val: -1, label: "-1)表現不好，邊做邊玩", color: "bg-rose-400", activeColor: "bg-rose-700", textColor: "text-rose-950", activeText: "text-white" },
+            { val: 0, label: "+0)被動、要做不做", color: "bg-orange-400", activeColor: "bg-orange-700", textColor: "text-orange-950", activeText: "text-white" },
+            { val: 1, label: "+1)偶爾做，比沒做還好一點", color: "bg-amber-400", activeColor: "bg-amber-700", textColor: "text-amber-950", activeText: "text-white" },
+            { val: 2, label: "+2)常常做，大部份都有完成", color: "bg-emerald-400", activeColor: "bg-emerald-700", textColor: "text-emerald-950", activeText: "text-white" },
+            { val: 3, label: "+3)都會主動去做，都按時完成", color: "bg-indigo-400", activeColor: "bg-indigo-800", textColor: "text-indigo-950", activeText: "text-white" }
         ];
 
         function App() {
@@ -116,7 +116,7 @@
                 return () => clearInterval(interval);
             }, []);
 
-            // 身分與登入監控
+            // 登入監控
             useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
                     if (currentUser) {
@@ -169,7 +169,7 @@
                 });
             };
 
-            // 讀取名單：強制座號排序
+            // 監聽幹部名單 (依座號排序)
             useEffect(() => {
                 if (!user) return;
                 const unsub = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('member_list').onSnapshot((snapshot) => {
@@ -203,7 +203,7 @@
 
             const officersSortedBySeat = useMemo(() => [...officers].sort((a, b) => Number(a.seatNo) - Number(b.seatNo)), [officers]);
 
-            // 統計計算 (針對座號比對)
+            // 統計邏輯 (核心：改用座號比對)
             const ratingStats = useMemo(() => {
                 const stats = {};
                 officers.forEach(off => { stats[off.seatNo] = { name: off.name, role: off.role, counts: { "-1": 0, "0": 0, "1": 0, "2": 0, "3": 0 } }; });
@@ -229,7 +229,7 @@
             const handleGoogleLogin = async (mode) => {
                 setLoginIntent(mode);
                 try { await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); } 
-                catch (error) { setModal({ show: true, title: '登入失敗', message: '無法開啟登入視窗。', type: 'error' }); }
+                catch (error) { setModal({ show: true, title: '登入失敗', message: '無法開啟 Google 登入視窗。', type: 'error' }); }
             };
 
             const handleLogout = () => { auth.signOut(); setStep('login'); setUserData(null); setLoginIntent(null); };
@@ -272,6 +272,7 @@
                 setDraggedItem(null);
             };
 
+            // 儲存名單：執行正規化
             const parseAndSaveList = async () => {
                 if (user.email !== TEACHER_EMAIL) return alert("權限不足。");
                 setIsActionLoading(true);
@@ -303,14 +304,14 @@
                         } 
                     });
                     await batch.commit(); 
-                    alert("名單更新成功！"); setEditList([]); setAdminTab('progress'); 
+                    alert("名單正規化並更新成功！"); setEditList([]); setAdminTab('progress'); 
                 } catch (err) { setModal({ show: true, title: '儲存失敗', message: `錯誤：${err.message}`, type: 'error' }); } 
                 finally { setIsActionLoading(false); }
             };
 
             return (
                 <div className="min-h-screen pb-10 bg-[#FFFAF0] text-black">
-                    {/* 彈窗 UI */}
+                    {/* 彈窗 */}
                     {modal.show && (
                         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-[100] p-4 text-center">
                             <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-sm w-full border-4 border-white">
@@ -321,9 +322,9 @@
                     )}
 
                     <header className="bg-white/70 backdrop-blur-md p-6 sticky top-0 z-10 border-b border-white">
-                        <div className="max-w-6xl mx-auto flex justify-between items-center">
+                        <div className="max-w-6xl mx-auto flex justify-between items-center text-black">
                             <h1 className="text-xl sm:text-2xl font-black text-[#8799E8] flex items-center gap-2">❤️ 班級幹部系統</h1>
-                            {user && (<div className="flex items-center gap-4">{userData && <span className="bg-lime-100 text-lime-700 px-4 py-1.5 rounded-full text-sm font-black border-2 border-white shadow-sm">{userData.seatNo} 號 {userData.name}</span>}<button onClick={handleLogout} className="text-slate-400 font-bold px-4 py-1 border rounded-full hover:bg-slate-50 text-xs shadow-sm font-black">登出系統</button></div>)}
+                            {user && (<div className="flex items-center gap-4">{userData && <span className="bg-lime-100 text-lime-700 px-4 py-1.5 rounded-full text-sm font-black border-2 border-white shadow-sm">{userData.seatNo} 號 {userData.name}</span>}<button onClick={handleLogout} className="text-slate-400 font-bold px-4 py-1 border rounded-full hover:bg-slate-50 text-xs shadow-sm font-black">登出</button></div>)}
                         </div>
                     </header>
 
@@ -351,7 +352,7 @@
                                     {adminTab === 'list' && (
                                         <div>
                                             <div className="flex justify-between items-center mb-6"><h3 className="text-2xl font-black">幹部名單設定</h3><button onClick={() => setIsAdminMode(isAdminMode==='manual'?'paste':'manual')} className="text-xs font-bold text-indigo-400 underline">切換匯入模式</button></div>
-                                            {isAdminMode === 'paste' ? <textarea value={pasteContent} onChange={(e)=>setPasteContent(e.target.value)} className="w-full h-48 bg-[#FFFAF0] rounded-3xl p-6 font-bold outline-none mb-4 border-2 border-transparent focus:border-[#C7CEEA] text-black" placeholder="格式：座號 職務 姓名 Email (Tab或空格分隔)" /> : (
+                                            {isAdminMode === 'paste' ? <textarea value={pasteContent} onChange={(e)=>setPasteContent(e.target.value)} className="w-full h-48 bg-[#FFFAF0] rounded-3xl p-6 font-bold outline-none mb-4 border-2 border-transparent focus:border-[#C7CEEA] text-black font-black" placeholder="格式：座號 職務 姓名 Email" /> : (
                                                 <div className="space-y-2">{editList.map((row, idx) => (<div key={idx} className="flex gap-2 items-center"><input type="number" value={row.seatNo} onChange={(e)=>{const n=[...editList]; n[idx].seatNo=e.target.value; setEditList(n);}} className="w-16 p-3 bg-slate-50 rounded-2xl font-bold text-center text-sm" /><input type="text" value={row.role} onChange={(e)=>{const n=[...editList]; n[idx].role=e.target.value; setEditList(n);}} className="flex-1 p-3 bg-slate-50 rounded-2xl font-bold text-sm" /><input type="text" value={row.name} onChange={(e)=>{const n=[...editList]; n[idx].name=e.target.value; setEditList(n);}} className="flex-1 p-3 bg-slate-50 rounded-2xl font-bold text-sm" /><input type="text" value={row.email} onChange={(e)=>{const n=[...editList]; n[idx].email=e.target.value; setEditList(n);}} className="flex-[1.5] p-3 bg-slate-50 rounded-2xl font-bold text-sm" placeholder="Email" /><button onClick={()=>setEditList(editList.filter((_,i)=>i!==idx))} className="text-rose-300 font-black px-3 text-xl hover:text-rose-500">×</button></div>))}<button onClick={()=>setEditList([...editList,{seatNo:'',role:'',name:'',email:''}])} className="text-xs font-bold text-indigo-400 mt-2 p-2 font-black">+ 增加欄位</button></div>
                                             )}
                                             <button onClick={parseAndSaveList} className="w-full bg-[#B5EAD7] text-emerald-800 py-5 rounded-3xl font-black mt-6 shadow-lg active:scale-95 transition-all">{isActionLoading ? '處理中...' : '儲存名單並重整'}</button>
@@ -359,12 +360,13 @@
                                     )}
                                     {adminTab === 'progress' && (
                                         <div className="overflow-x-auto"><table className="w-full text-left font-bold border-separate border-spacing-y-2"><thead><tr className="text-slate-400 text-xs"><th className="py-2 pl-4 w-20">座號</th><th>姓名</th><th className="text-center">狀態</th><th className="text-right pr-4 font-black">最後同步</th></tr></thead><tbody>
-                                            {officersSortedBySeat.length > 0 ? officersSortedBySeat.map(student => {
+                                            {officersSortedBySeat.map(student => {
                                                 const r = allStudentResponses.find(res => String(res.seatNo) === String(student.seatNo));
+                                                // 修正進度判斷：即便名單更換，紀錄也會存在 summary 中
                                                 const hEval = r && Object.keys(r.evaluations || {}).length >= officers.length;
                                                 const hPref = r && (r.preferences || []).filter(p => p).length >= 5;
                                                 return (<tr key={student.id} className="bg-slate-50/50 rounded-2xl"><td className="py-4 pl-4 font-black">{student.seatNo}</td><td className="py-4 font-black">{student.name}</td><td className="py-4"><div className="flex gap-2 justify-center font-black"><div className={`px-5 py-2 rounded-2xl text-[10px] ${hEval ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-400'}`}>評分</div><div className={`px-5 py-2 rounded-2xl text-[10px] ${hPref ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-400'}`}>志願</div></div></td><td className="py-4 text-right pr-4 text-[10px] text-slate-300 font-bold">{r?.lastUpdated ? new Date(r.lastUpdated).toLocaleTimeString() : '-'}</td></tr>);
-                                            }) : <tr><td colSpan="4" className="py-20 text-center text-slate-300 italic font-black">尚未設定名單，請先匯入。</td></tr>}
+                                            })}
                                         </tbody></table></div>
                                     )}
                                     {adminTab === 'ratings' && (
@@ -376,7 +378,7 @@
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-black">
                                             {ROLE_ORDER.map(role => {
                                                 const filtered = (volunteerStats[role] || []).sort((a,b)=>a.rank-b.rank);
-                                                return (<div key={role} className="bg-slate-50 p-5 rounded-[2rem] border-2 flex flex-col min-h-[140px] font-black"><div className="font-black mb-3 flex justify-between border-b pb-2 text-lg">{role}<span className="text-[10px] text-indigo-500 bg-white px-3 py-1 rounded-full shadow-inner">{filtered.length}</span></div><div className="flex flex-wrap gap-2 flex-1">{filtered.map((s, i) => (<div key={i} className="bg-white px-3 py-1.5 rounded-xl text-xs font-black shadow-sm flex items-center gap-1">#{s.seatNo} {s.name} <span className="text-indigo-400">({s.rank})</span></div>))}</div></div>);
+                                                return (<div key={role} className="bg-slate-50 p-5 rounded-[2rem] border-2 flex flex-col min-h-[140px] font-black"><div className="font-black mb-3 flex justify-between border-b pb-2 text-lg font-black text-black">{role}<span className="text-[10px] text-indigo-500 bg-white px-3 py-1 rounded-full shadow-inner">{filtered.length}</span></div><div className="flex flex-wrap gap-2 flex-1">{filtered.map((s, i) => (<div key={i} className="bg-white px-3 py-1.5 rounded-xl text-xs font-black shadow-sm flex items-center gap-1">#{s.seatNo} {s.name} <span className="text-indigo-600 font-black">({s.rank})</span></div>))}</div></div>);
                                         })}</div>
                                     )}
                                 </div>
@@ -387,18 +389,18 @@
                             <div className="animate-in slide-in-from-bottom-6 duration-500">
                                 <div className="bg-white p-6 sm:p-10 rounded-[4rem] border-4 border-white mb-8 shadow-sm">
                                     <h2 className="text-3xl font-black mb-10 text-center text-[#8799E8]">⭐ 幹部表現評分</h2>
-                                    <div className="space-y-4">
+                                    <div className="space-y-4 font-black">
                                         {officersSortedBySeat.map(off => (
-                                            <div key={off.id} className="flex flex-col xl:flex-row gap-2 p-3 rounded-[2.2rem] border-2 border-slate-50 hover:bg-white transition-all duration-300">
+                                            <div key={off.id} className="flex flex-col xl:flex-row gap-1 p-3 rounded-[2.2rem] border-2 border-slate-50 hover:bg-white transition-all duration-300">
                                                 <div className="flex flex-col justify-center xl:w-28 shrink-0 font-black pl-2">
                                                     <div className="text-2xl font-black text-slate-700 leading-tight">#{off.seatNo} <span className="text-lg">{off.name}</span></div>
                                                     <div className="text-[10px] font-bold text-indigo-400 mt-1 uppercase">{off.role}</div>
                                                 </div>
-                                                <div className="flex-1 overflow-hidden font-black">
+                                                <div className="flex-1 overflow-hidden">
                                                     <div className="flex items-stretch rounded-[1.5rem] overflow-x-auto no-scrollbar border-2 border-white shadow-lg min-h-[70px] bg-white">
                                                         {RATING_OPTIONS.map((opt) => (
                                                             <button key={opt.val} onClick={() => setUserResponse({...userResponse, evaluations: {...userResponse.evaluations, [off.seatNo]: opt.val}})} 
-                                                                    className={`health-segment flex-1 flex items-center justify-center px-2 border-r last:border-r-0 min-w-[100px] text-center leading-tight ${userResponse.evaluations[off.seatNo] === opt.val ? `${opt.activeColor} ${opt.activeText} scale-[1.02] z-10 shadow-inner font-black` : `${opt.color} ${opt.textColor} opacity-60 hover:opacity-100 font-bold`}`}>
+                                                                    className={`health-segment flex-1 flex items-center justify-center px-1 border-r last:border-r-0 min-w-[100px] text-center leading-tight ${userResponse.evaluations[off.seatNo] === opt.val ? `${opt.activeColor} ${opt.activeText} scale-[1.02] z-10 shadow-inner font-black` : `${opt.color} ${opt.textColor} opacity-80 hover:opacity-100 font-black`}`}>
                                                                 <span className="text-[11px] font-black">{opt.label}</span>
                                                             </button>
                                                         ))}
@@ -408,7 +410,7 @@
                                         ))}
                                     </div>
                                 </div>
-                                <div className="flex justify-end mb-20"><button onClick={handleFinalSubmitCheck} className="bg-[#B5EAD7] text-emerald-800 font-black py-6 px-20 rounded-full shadow-2xl border-4 border-white text-xl hover:scale-105 active:scale-95 transition-all">下一步：選填志願</button></div>
+                                <div className="flex justify-end mb-20 font-black"><button onClick={() => setStep('pref')} className="bg-[#B5EAD7] text-emerald-800 font-black py-6 px-20 rounded-full shadow-2xl border-4 border-white text-xl hover:scale-105 active:scale-95 transition-all">下一步：選填志願</button></div>
                             </div>
                         )}
 
@@ -439,17 +441,17 @@
 
                         {step === 'summary' && (
                             <div className="bg-white p-12 rounded-[5rem] border-4 border-white shadow-2xl text-center relative animate-in zoom-in duration-700 font-black">
-                                <div className="absolute top-8 right-10 flex items-center gap-2 uppercase text-[10px] text-slate-300 font-black font-black font-black"><div className={`w-2 h-2 rounded-full ${refreshTick % 2 === 0 ? 'bg-emerald-400 animate-ping' : 'bg-emerald-200'}`}></div>Live Updates</div>
-                                <h2 className="text-5xl font-black text-slate-800 mb-8 tracking-tighter">填寫成功！✨</h2>
-                                <p className="text-slate-400 font-bold mb-12 text-lg">Hi {user?.displayName}，名單已進入統計。</p>
+                                <div className="absolute top-8 right-10 flex items-center gap-2 uppercase text-[10px] text-slate-300 font-black font-black font-black font-black"><div className={`w-2 h-2 rounded-full ${refreshTick % 2 === 0 ? 'bg-emerald-400 animate-ping' : 'bg-emerald-200'}`}></div>Live Updates</div>
+                                <h2 className="text-5xl font-black text-slate-800 mb-8 tracking-tighter font-black font-black">填寫成功！✨</h2>
+                                <p className="text-slate-400 font-bold mb-12 text-lg font-black font-black">Hi {user?.displayName}，名單已進入統計。</p>
                                 <button onClick={() => setStep('eval')} className="bg-[#FFFAF0] text-[#C7CEEA] font-black py-5 px-16 rounded-full border-4 border-[#C7CEEA]/20 hover:bg-[#C7CEEA] hover:text-white transition-all shadow-sm active:scale-95">返回修改填答</button>
                             </div>
                         )}
 
                         {step === 'unauthorized' && (
-                            <div className="bg-white p-12 rounded-[4rem] shadow-xl border-4 border-rose-100 max-w-md mx-auto mt-20 text-center animate-in zoom-in duration-500 font-black font-black font-black">
-                                <div className="text-7xl mb-8">🚫</div><h2 className="text-3xl font-black text-rose-500 mb-6 font-black font-black font-black font-black">身分核對失敗</h2>
-                                <p className="text-slate-400 font-bold mb-10 leading-relaxed font-black font-black">您的 Google Email「<span className="text-rose-600 font-black font-black">{user?.email}</span>」不在目前的幹部名單中。</p>
+                            <div className="bg-white p-12 rounded-[4rem] shadow-xl border-4 border-rose-100 max-w-md mx-auto mt-20 text-center animate-in zoom-in duration-500 font-black font-black font-black font-black font-black">
+                                <div className="text-7xl mb-8 font-black font-black">🚫</div><h2 className="text-3xl font-black text-rose-500 mb-6 font-black font-black font-black font-black font-black font-black font-black">身分核對失敗</h2>
+                                <p className="text-slate-400 font-bold mb-10 leading-relaxed font-black font-black font-black font-black">您的 Google Email「<span className="text-rose-600 font-black font-black font-black font-black font-black">{user?.email}</span>」不在名單中。</p>
                                 <button onClick={handleLogout} className="w-full bg-slate-100 py-6 rounded-[2.5rem] font-black text-slate-400 hover:bg-slate-200 transition-all text-lg font-black font-black">登出更換帳號</button>
                             </div>
                         )}
