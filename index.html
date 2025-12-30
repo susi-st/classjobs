@@ -51,12 +51,19 @@
         const appId = "class-officer-system";
         const TEACHER_EMAIL = "susi@st.tc.edu.tw";
 
+        // 原始順序 (含數字，用於匯入時的比對排序)
         const ROLE_ORDER = [
             "班長", "副班長", "風紀1", "風紀2", "學藝1", "學藝2", "設備1", "設備2",
             "體育1", "衛生1", "衛生2", "環保1", "環保2", "總務1", "總務2", "資訊1",
             "資訊2", "輔導1", "輔導2", "服務1", "服務2", "健康1", "健康2", "禮貌1",
             "禮貌2", "圖書1", "圖書2", "腳踏車1", "腳踏車2"
         ];
+
+        // 輔助函式：正規化職務名稱 (去除尾端數字)
+        const normalizeRole = (roleName) => {
+            if (!roleName) return "";
+            return roleName.toString().replace(/\d+$/, '').trim();
+        };
 
         const RATING_OPTIONS = [
             { val: -1, label: "表現不好，邊做邊玩", color: "bg-rose-100", activeColor: "bg-rose-500", textColor: "text-rose-900", activeText: "text-white" },
@@ -87,6 +94,7 @@
             const [editList, setEditList] = useState([]);
             const [isAdminMode, setIsAdminMode] = useState('manual');
             const [pasteContent, setPasteContent] = useState('');
+            const [availableRoles, setAvailableRoles] = useState([]);
 
             useEffect(() => {
                 const interval = setInterval(() => setRefreshTick(p => p + 1), 10000);
@@ -117,6 +125,7 @@
                 try {
                     const snap = await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('member_list').get();
                     const list = snap.docs.map(d => d.data());
+                    // 比對 Email
                     const matched = list.find(o => o.email === currentUser.email);
                     if (matched) {
                         setUserData(matched);
@@ -151,7 +160,7 @@
                 if (!user) return;
                 const unsub = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('member_list').onSnapshot((snapshot) => {
                     const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                    // 投票頁面用的排序：依職務順序
+                    // 依 orderIndex 排序
                     data.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
                     setOfficers(data);
                     
@@ -159,16 +168,20 @@
                         const sortedBySeat = [...data].sort((a, b) => Number(a.seatNo) - Number(b.seatNo));
                         setEditList(sortedBySeat.map(item => ({ 
                             seatNo: item.seatNo, 
-                            role: item.role, 
+                            role: item.role,  // 這裡已經是去數字後的名稱了
                             name: item.name, 
                             email: item.email || ""
                         })));
                     }
+
+                    // 計算可選職務 (需正規化 ROLE_ORDER)
+                    const uniqueRoleTypes = [...new Set(ROLE_ORDER.map(r => normalizeRole(r)))];
+                    setAvailableRoles(uniqueRoleTypes.filter(r => !(userResponse.preferences || []).includes(r)));
+
                 });
                 return () => unsub();
-            }, [user, editList.length]);
+            }, [user, editList.length, userResponse.preferences]);
 
-            // 監聽所有回應 (responses_summary)
             useEffect(() => {
                 if (!user) return;
                 const unsub = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('responses_summary').onSnapshot((snap) => {
@@ -182,13 +195,14 @@
             const statistics = useMemo(() => {
                 let incEval = 0, incPref = 0;
                 officers.forEach(s => {
-                    // 修正：改用座號比對 (比對轉為字串以防類型不符)
                     const r = allStudentResponses.find(res => String(res.seatNo) === String(s.seatNo));
                     if (!r || Object.keys(r.evaluations || {}).length < officers.length) incEval++;
                     if (!r || (r.preferences || []).filter(p => p).length < 5) incPref++;
                 });
                 const roleStats = {};
-                ROLE_ORDER.forEach(role => roleStats[role] = { r1: 0, r2: 0, r3: 0 });
+                // 使用正規化後的名稱初始化統計
+                [...new Set(ROLE_ORDER.map(r => normalizeRole(r)))].forEach(role => roleStats[role] = { r1: 0, r2: 0, r3: 0 });
+                
                 allStudentResponses.forEach(r => {
                     const p = r.preferences || [];
                     if (p[0] && roleStats[p[0]]) roleStats[p[0]].r1++;
@@ -207,6 +221,17 @@
                 });
                 return stats;
             }, [allStudentResponses, officers]);
+
+            const volunteerStats = useMemo(() => {
+                const stats = {};
+                const uniqueTypes = [...new Set(ROLE_ORDER.map(r => normalizeRole(r)))];
+                uniqueTypes.forEach(role => stats[role] = []);
+                allStudentResponses.forEach(resp => {
+                    const prefs = resp.preferences || [];
+                    prefs.forEach((role, idx) => { if (role && stats[role] !== undefined) stats[role].push({ name: resp.name, seatNo: resp.seatNo, rank: idx + 1 }); });
+                });
+                return stats;
+            }, [allStudentResponses]);
 
             const awardList = useMemo(() => {
                 const list = [];
@@ -238,8 +263,8 @@
                 try {
                     const submitName = userData ? userData.name : user.displayName;
                     const submitSeat = userData ? userData.seatNo : "??";
-
-                    const data = { ...userResponse, isSubmitted: true, lastUpdated: new Date().toISOString(), name: submitName };
+                    const data = { ...userResponse, isSubmitted: true, lastUpdated: new Date().toISOString(), name: submitName, seatNo: submitSeat };
+                    
                     await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('data').doc('responses').set(data, { merge: true });
                     await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('responses_summary').doc(user.uid).set({
                         seatNo: submitSeat, name: submitName, evaluations: userResponse.evaluations, preferences: userResponse.preferences, lastUpdated: new Date().toISOString()
@@ -267,6 +292,7 @@
 
             const handleDrop = (e, targetType, targetIndex) => {
                 e.preventDefault();
+                // 拖曳邏輯
             };
 
             const parseAndSaveList = async () => {
@@ -287,6 +313,7 @@
                             if (p.length >= 4 && !isNaN(p[0])) {
                                 return { seatNo: p[0], role: p[1], name: p[2], email: p[3] };
                             }
+                            // 兼容舊格式
                             if (p.length === 3 && !isNaN(p[0])) {
                                 return { seatNo: p[0], role: p[1], name: p[2], email: "" };
                             }
@@ -301,12 +328,15 @@
                     listToSave.forEach((o) => { 
                         if (o.name && o.role) { 
                             const newDoc = col.doc(); 
-                            const order = ROLE_ORDER.indexOf(o.role);
+                            const order = ROLE_ORDER.indexOf(o.role); // 用原始含數字的名稱找排序
                             const cleanName = o.name.split('(')[0].trim(); 
+                            // 關鍵：將職務名稱去數字後再寫入
+                            const cleanRole = normalizeRole(o.role);
 
                             batch.set(newDoc, { 
                                 seatNo: Number(o.seatNo), 
-                                role: o.role, 
+                                role: cleanRole,  // 存入去數字後的職稱
+                                originalRole: o.role, // 保留原始職稱備查
                                 name: cleanName, 
                                 email: (o.email || "").trim(),
                                 orderIndex: order === -1 ? 999 : order 
@@ -441,7 +471,7 @@
                                     )}
                                     {adminTab === 'volunteers' && (
                                         <div className="space-y-8 animate-in fade-in font-black"><div className="flex flex-col sm:flex-row justify-between items-center bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2 gap-4"><div><h4 className="font-black text-lg">志願統計累計篩選</h4><p className="text-xs text-slate-400 font-bold">顯示前 {topNFilter} 志願人選</p></div><div className="flex gap-2">{[1, 2, 3, 4, 5].map(rank => (<button key={rank} onClick={() => setTopNFilter(rank)} className={`w-12 h-12 rounded-2xl font-black transition-all ${topNFilter === rank ? 'bg-indigo-500 text-white scale-110 shadow-lg' : 'bg-white text-slate-300 border'}`}>{rank}</button>))}</div></div>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{ROLE_ORDER.map(role => {
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{[...new Set(ROLE_ORDER.map(r => normalizeRole(r)))].map(role => {
                                             const filtered = (volunteerStats[role] || []).filter(s => s.rank <= topNFilter).sort((a,b)=>a.rank-b.rank);
                                             return (<div key={role} className="bg-slate-50 p-5 rounded-[2rem] border-2 flex flex-col min-h-[140px] font-black"><div className="font-black mb-3 flex justify-between border-b pb-2 text-lg font-black text-black">{role}<span className="text-[10px] text-indigo-500 bg-white px-3 py-1 rounded-full shadow-inner font-black">{filtered.length}</span></div><div className="flex flex-wrap gap-2 flex-1">{filtered.map((s, i) => (<div key={i} className="bg-white px-3 py-1.5 rounded-xl text-xs font-black shadow-sm flex items-center gap-1 font-black text-black">#{s.seatNo} {s.name} <span className="text-indigo-400 font-black">({s.rank})</span></div>))}</div></div>);
                                         })}</div></div>
@@ -466,7 +496,7 @@
                                 <div className="lg:col-span-4 bg-white p-8 rounded-[4rem] border-4 lg:sticky lg:top-28 shadow-xl text-center font-black"><h3 className="text-xl font-black text-[#8799E8] mb-6 font-black font-black">可選職務</h3>
                                 <div className="flex flex-wrap gap-3 p-6 bg-[#FFFAF0] rounded-[2.5rem] min-h-[200px] border-2 border-dashed font-black font-black">
                                     {ROLE_ORDER.filter(r => !(userResponse.preferences || []).includes(r)).map(r => (
-                                        <div key={r} className="bg-white border-2 border-[#C7CEEA] px-6 py-3 rounded-2xl font-black text-base text-[#8799E8] shadow-sm flex items-center gap-2 font-black font-black">⠿ {r}</div>
+                                        <div key={r} draggable onDragStart={(e)=>{}} className="bg-white border-2 border-[#C7CEEA] px-6 py-3 rounded-2xl font-black text-base text-[#8799E8] shadow-sm flex items-center gap-2 font-black font-black">⠿ {r}</div>
                                     ))}
                                 </div></div>
                                 <div className="lg:col-span-8 bg-white p-12 rounded-[4rem] border-4 shadow-xl text-center font-black font-black font-black"><h3 className="text-2xl font-black mb-8 text-slate-800 tracking-tighter font-black font-black">下學期志願排序 (前 5 名必填)</h3>
