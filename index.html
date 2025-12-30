@@ -48,8 +48,8 @@
         const auth = firebase.auth();
         const db = firebase.firestore();
         
-        // 移除強制 Email 檢查，方便測試
-        // const TEACHER_EMAIL = "susi@st.tc.edu.tw";
+        const appId = "class-officer-system";
+        const TEACHER_EMAIL = "susi@st.tc.edu.tw";
 
         const ROLE_ORDER = [
             "班長", "副班長", "風紀1", "風紀2", "學藝1", "學藝2", "設備1", "設備2",
@@ -92,14 +92,13 @@
                 return () => clearInterval(interval);
             }, []);
 
-            // 登入狀態監控
             useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
                     if (currentUser) {
                         setUser(currentUser);
-                        // 如果是從「教師入口」登入，直接進入後台 (略過 Email 檢查)
-                        if (loginIntent === 'teacher' || step === 'admin') {
-                            setStep('admin');
+                        if (currentUser.email === TEACHER_EMAIL) {
+                            if (loginIntent === 'teacher' || step === 'admin') setStep('admin');
+                            else await checkStudentIdentity(currentUser);
                         } else {
                             await checkStudentIdentity(currentUser);
                         }
@@ -112,23 +111,27 @@
                 return () => unsubscribe();
             }, [loginIntent]);
 
+            // 身分驗證：改為比對 Email
             const checkStudentIdentity = async (currentUser) => {
                 try {
-                    const snap = await db.collection('member_list').get();
+                    const snap = await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('member_list').get();
                     const list = snap.docs.map(d => d.data());
-                    const matched = list.find(o => o.name === currentUser.displayName);
+                    // 關鍵修改：使用 email 比對
+                    const matched = list.find(o => o.email === currentUser.email);
+                    
                     if (matched) {
                         setUserData(matched);
                         loadUserResponse(currentUser.uid);
-                    } else {
-                        // 學生身分不符
+                    } else if (currentUser.email !== TEACHER_EMAIL) {
                         setStep('unauthorized');
+                    } else {
+                        setStep('admin');
                     }
-                } catch (e) { console.error(e); }
+                } catch (e) { console.error("Identity Check Error:", e); }
             };
 
             const loadUserResponse = (uid) => {
-                db.collection('responses').doc(uid).onSnapshot((docSnap) => {
+                db.collection('artifacts').doc(appId).collection('users').doc(uid).collection('data').doc('responses').onSnapshot((docSnap) => {
                     if (docSnap.exists) {
                         const data = docSnap.data();
                         setUserResponse(prev => ({
@@ -144,26 +147,33 @@
                 });
             };
 
-            // 監聽幹部名單
+            // 監聽幹部名單 (並依座號排序填入編輯列表)
             useEffect(() => {
                 if (!user) return;
-                const unsub = db.collection('member_list').onSnapshot((snapshot) => {
+                const unsub = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('member_list').onSnapshot((snapshot) => {
                     const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    
+                    // 投票頁面用的排序：依職務順序
                     data.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
                     setOfficers(data);
+                    
+                    // 管理頁面用的初始列表：依座號排序
                     if (editList.length === 0 && data.length > 0) {
-                        setEditList(data.map(item => ({ seatNo: item.seatNo, role: item.role, name: item.name })));
+                        const sortedBySeat = [...data].sort((a, b) => Number(a.seatNo) - Number(b.seatNo));
+                        setEditList(sortedBySeat.map(item => ({ 
+                            seatNo: item.seatNo, 
+                            role: item.role, 
+                            name: item.name,
+                            email: item.email || "" // 加入 email 欄位
+                        })));
                     }
-                }, (err) => {
-                    if (loginIntent === 'teacher') console.warn("名單讀取權限警告:", err);
                 });
                 return () => unsub();
             }, [user, editList.length]);
 
-            // 監聽所有回應
             useEffect(() => {
                 if (!user) return;
-                const unsub = db.collection('responses').onSnapshot((snap) => {
+                const unsub = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('responses_summary').onSnapshot((snap) => {
                     setAllStudentResponses(snap.docs.map(d => ({ uid: d.id, ...d.data() })));
                 });
                 return () => unsub();
@@ -218,7 +228,7 @@
                 try {
                     await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
                 } catch (error) { 
-                    setModal({ show: true, title: '登入失敗', message: '無法開啟 Google 登入視窗。請確認是否在 Firebase 授權了 GitHub 網域。', type: 'error' });
+                    setModal({ show: true, title: '登入失敗', message: '無法開啟 Google 登入視窗。', type: 'error' });
                 }
             };
 
@@ -228,7 +238,10 @@
                 setIsActionLoading(true); setModal({show:false});
                 try {
                     const data = { ...userResponse, isSubmitted: true, lastUpdated: new Date().toISOString(), name: user.displayName };
-                    await db.collection('responses').doc(user.uid).set(data, { merge: true });
+                    await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('data').doc('responses').set(data, { merge: true });
+                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('responses_summary').doc(user.uid).set({
+                        seatNo: userData?.seatNo || "??", name: user.displayName, evaluations: userResponse.evaluations, preferences: userResponse.preferences, lastUpdated: new Date().toISOString()
+                    });
                     setStep('summary');
                 } catch (e) { 
                     setModal({ show: true, title: '儲存失敗', message: '發生錯誤：' + e.message, type: 'error' });
@@ -255,11 +268,13 @@
             };
 
             const parseAndSaveList = async () => {
-                // 移除 Email 檢查，允許任何教師入口登入者寫入
+                // 暫時移除 Email 檢查以利測試，正式上線建議加回
+                // if (user.email !== TEACHER_EMAIL) return alert("權限不足。");
+                
                 setIsActionLoading(true);
                 try {
                     const batch = db.batch();
-                    const col = db.collection('member_list');
+                    const col = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('member_list');
                     const snap = await col.get(); 
                     snap.docs.forEach(d => batch.delete(d.ref));
                     
@@ -267,9 +282,14 @@
                     if (isAdminMode === 'paste') {
                         const lines = pasteContent.split('\n').filter(l => l.trim());
                         listToSave = lines.map(l => {
+                            // 解析：座號(0) 職務(1) 姓名(2) Email(3)
                             const p = l.split(/\t|\s+/).filter(x => x); 
-                            if (p.length >= 3 && !isNaN(p[0])) {
-                                return { seatNo: p[0], role: p[1], name: p[2] };
+                            if (p.length >= 4 && !isNaN(p[0])) {
+                                return { seatNo: p[0], role: p[1], name: p[2], email: p[3] };
+                            }
+                            // 兼容舊格式（沒 Email）
+                            if (p.length === 3 && !isNaN(p[0])) {
+                                return { seatNo: p[0], role: p[1], name: p[2], email: "" };
                             }
                             return null;
                         }).filter(x => x !== null);
@@ -277,19 +297,24 @@
                         listToSave = editList.filter(o => o.name && o.role && o.seatNo);
                     }
 
-                    if (listToSave.length === 0) {
-                        throw new Error("沒有有效的名單資料。");
-                    }
+                    if (listToSave.length === 0) throw new Error("名單無效。格式應為：座號 職務 姓名 Email");
 
                     listToSave.forEach((o) => { 
-                        const newDoc = col.doc(); 
-                        const order = ROLE_ORDER.indexOf(o.role);
-                        batch.set(newDoc, { 
-                            seatNo: Number(o.seatNo), 
-                            role: o.role, 
-                            name: o.name, 
-                            orderIndex: order === -1 ? 999 : order 
-                        }); 
+                        if (o.name && o.role) { 
+                            const newDoc = col.doc(); 
+                            const order = ROLE_ORDER.indexOf(o.role);
+                            
+                            // 關鍵修改：去除姓名中 "(" 之後的內容
+                            const cleanName = o.name.split('(')[0].trim();
+
+                            batch.set(newDoc, { 
+                                seatNo: Number(o.seatNo), 
+                                role: o.role, 
+                                name: cleanName, 
+                                email: o.email || "", // 寫入 Email
+                                orderIndex: order === -1 ? 999 : order 
+                            }); 
+                        } 
                     });
                     
                     await batch.commit(); 
@@ -306,13 +331,12 @@
 
             return (
                 <div className="min-h-screen pb-10 bg-[#FFFAF0]">
-                    {/* 彈窗 UI */}
                     {modal.show && (
                         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-[100] p-4 text-center text-black">
                             <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-sm w-full border-4 border-white">
                                 <div className="p-8">
                                     <h3 className={`text-2xl font-black mb-2 ${modal.type === 'error' ? 'text-rose-500' : 'text-[#8799E8]'}`}>{modal.title}</h3>
-                                    <p className="text-slate-500 font-bold text-sm leading-relaxed whitespace-pre-wrap">{modal.message}</p>
+                                    <p className="text-slate-500 font-bold text-sm leading-relaxed">{modal.message}</p>
                                 </div>
                                 <div className="p-6 pt-0 flex gap-3">
                                     {modal.onConfirm ? (
@@ -360,7 +384,7 @@
                             {user && (
                                 <div className="flex items-center gap-4">
                                     {userData && <span className={`px-4 py-1.5 rounded-full text-sm font-black border-2 border-white shadow-sm ${userData.isTeacher ? 'bg-orange-100 text-orange-600' : 'bg-lime-100 text-lime-700'}`}>{userData.isTeacher ? '教師模式' : `${userData.seatNo} 號 ${userData.name}`}</span>}
-                                    <button onClick={handleLogout} className="text-slate-400 font-bold px-4 py-1 border rounded-full hover:bg-slate-50 text-xs shadow-sm font-black transition-all">登出</button>
+                                    <button onClick={handleLogout} className="text-slate-400 font-bold px-4 py-1 border rounded-full hover:bg-slate-50 text-xs shadow-sm font-black transition-all">登出系統</button>
                                 </div>
                             )}
                         </div>
@@ -393,16 +417,17 @@
                                 <div className="bg-white p-8 sm:p-10 rounded-[4rem] border-4 border-white shadow-sm min-h-[400px]">
                                     {adminTab === 'list' && (
                                         <div>
-                                            <div className="flex justify-between items-center mb-6"><h3 className="text-2xl font-black text-slate-700 font-black text-black">幹部名單管理</h3>
-                                                <div className="text-right">
-                                                    <span className="text-xs font-black text-slate-400 block mb-1">目前登入：{user.email}</span>
-                                                    <button onClick={() => setIsAdminMode(isAdminMode==='manual'?'paste':'manual')} className="text-xs font-bold text-indigo-400 underline">切換匯入模式</button>
-                                                </div>
-                                            </div>
-                                            {isAdminMode === 'paste' ? <textarea value={pasteContent} onChange={(e)=>setPasteContent(e.target.value)} className="w-full h-48 bg-[#FFFAF0] rounded-3xl p-6 font-bold outline-none mb-4 border-2 border-transparent focus:border-[#C7CEEA] text-black font-black" placeholder="座號 職務 姓名" /> : (
+                                            <div className="flex justify-between items-center mb-6"><h3 className="text-2xl font-black text-slate-700 font-black text-black">幹部名單管理</h3><button onClick={() => setIsAdminMode(isAdminMode==='manual'?'paste':'manual')} className="text-xs font-bold text-indigo-400 underline">切換匯入模式</button></div>
+                                            {isAdminMode === 'paste' ? <textarea value={pasteContent} onChange={(e)=>setPasteContent(e.target.value)} className="w-full h-48 bg-[#FFFAF0] rounded-3xl p-6 font-bold outline-none mb-4 border-2 border-transparent focus:border-[#C7CEEA] text-black font-black" placeholder="格式：座號 職務 姓名 Email (以空格或 Tab 分隔)" /> : (
                                                 <div className="space-y-2">{editList.map((row, idx) => (
-                                                    <div key={idx} className="flex gap-2 items-center text-black font-black"><input type="number" value={row.seatNo} onChange={(e)=>{const n=[...editList]; n[idx].seatNo=e.target.value; setEditList(n);}} className="w-16 p-3 bg-slate-50 rounded-2xl font-bold text-center text-sm" /><input type="text" value={row.role} onChange={(e)=>{const n=[...editList]; n[idx].role=e.target.value; setEditList(n);}} className="flex-1 p-3 bg-slate-50 rounded-2xl font-bold text-sm" /><input type="text" value={row.name} onChange={(e)=>{const n=[...editList]; n[idx].name=e.target.value; setEditList(n);}} className="flex-1 p-3 bg-slate-50 rounded-2xl font-bold text-sm" /><button onClick={()=>setEditList(editList.filter((_,i)=>i!==idx))} className="text-rose-300 font-black px-3 text-xl hover:text-rose-500">×</button></div>
-                                                ))}<button onClick={()=>setEditList([...editList,{seatNo:'',role:'',name:''}])} className="text-xs font-bold text-indigo-400 mt-2 p-2 font-black">+ 增加欄位</button></div>
+                                                    <div key={idx} className="flex gap-2 items-center text-black font-black">
+                                                        <input type="number" value={row.seatNo} onChange={(e)=>{const n=[...editList]; n[idx].seatNo=e.target.value; setEditList(n);}} className="w-16 p-3 bg-slate-50 rounded-2xl font-bold text-center text-sm" placeholder="座號" />
+                                                        <input type="text" value={row.role} onChange={(e)=>{const n=[...editList]; n[idx].role=e.target.value; setEditList(n);}} className="flex-1 p-3 bg-slate-50 rounded-2xl font-bold text-sm" placeholder="職務" />
+                                                        <input type="text" value={row.name} onChange={(e)=>{const n=[...editList]; n[idx].name=e.target.value; setEditList(n);}} className="flex-1 p-3 bg-slate-50 rounded-2xl font-bold text-sm" placeholder="姓名" />
+                                                        <input type="email" value={row.email} onChange={(e)=>{const n=[...editList]; n[idx].email=e.target.value; setEditList(n);}} className="flex-[1.5] p-3 bg-slate-50 rounded-2xl font-bold text-sm" placeholder="Google Email" />
+                                                        <button onClick={()=>setEditList(editList.filter((_,i)=>i!==idx))} className="text-rose-300 font-black px-3 text-xl hover:text-rose-500">×</button>
+                                                    </div>
+                                                ))}<button onClick={()=>setEditList([...editList,{seatNo:'',role:'',name:'',email:''}])} className="text-xs font-bold text-indigo-400 mt-2 p-2 font-black">+ 增加欄位</button></div>
                                             )}
                                             <button onClick={parseAndSaveList} className="w-full bg-[#B5EAD7] text-emerald-800 py-5 rounded-3xl font-black mt-6 shadow-lg active:scale-95 transition-all">{isActionLoading ? '處理中...' : '儲存名單並切換檢視'}</button>
                                         </div>
@@ -418,8 +443,9 @@
                                         </tbody></table></div>
                                     )}
                                     {adminTab === 'ratings' && (
-                                        <div className="animate-in fade-in"><div className="flex justify-between items-center mb-10 bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2"><div><h3 className="text-xl font-black">表現評價分析</h3></div><button onClick={() => setShowAwardModal(true)} className="px-8 py-4 bg-indigo-600 text-white font-black rounded-[2rem] shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center gap-2 font-black">🎖️ 查看敘獎建議</button></div>
-                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 font-black text-black">{officers.map(off => (<div key={off.id} className="bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2 shadow-sm font-black"><div className="flex items-center gap-2 mb-4 font-black"><span className="bg-[#C7CEEA] text-white text-[10px] px-3 py-1 rounded-full">{off.role}</span><span className="text-lg text-black">{off.name}</span></div><div className="grid grid-cols-5 gap-2">{RATING_OPTIONS.map(opt => (<div key={opt.val} className={`p-2 rounded-2xl flex flex-col items-center border-2 border-white ${opt.color}`}><span className="text-xl font-black">{ratingStats[off.id]?.counts[String(opt.val)] || 0}</span></div>))}</div></div>))}</div></div>
+                                        <div className="animate-in fade-in"><div className="flex justify-between items-center mb-10 bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2 font-black"><div><h3 className="text-xl font-black text-black">表現評價分析</h3></div><button onClick={() => setShowAwardModal(true)} className="px-8 py-4 bg-indigo-600 text-white font-black rounded-[2rem] shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center gap-2 font-black">🎖️ 查看敘獎建議</button></div>
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 font-black text-black">{officers.map(off => (<div key={off.id} className="bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2 shadow-sm font-black"><div className="flex items-center gap-2 mb-4 font-black"><span className="bg-[#C7CEEA] text-white text-[10px] px-3 py-1 rounded-full">{off.role}</span><span className="text-lg text-black">{off.name}</span></div><div className="grid grid-cols-5 gap-2">{RATING_OPTIONS.map(opt => (<div key={opt.val} className={`p-2 rounded-2xl flex flex-col items-center border-2 border-white ${opt.color}`}><span className="text-xl font-black">{ratingStats[off.id]?.counts[String(opt.val)] || 0}</span></div>))}</div></div>))}</div>
+                                        </div>
                                     )}
                                     {adminTab === 'volunteers' && (
                                         <div className="space-y-8 animate-in fade-in font-black"><div className="flex flex-col sm:flex-row justify-between items-center bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2 gap-4"><div><h4 className="font-black text-lg">志願統計累計篩選</h4><p className="text-xs text-slate-400 font-bold">顯示前 {topNFilter} 志願人選</p></div><div className="flex gap-2">{[1, 2, 3, 4, 5].map(rank => (<button key={rank} onClick={() => setTopNFilter(rank)} className={`w-12 h-12 rounded-2xl font-black transition-all ${topNFilter === rank ? 'bg-indigo-500 text-white scale-110 shadow-lg' : 'bg-white text-slate-300 border'}`}>{rank}</button>))}</div></div>
@@ -475,7 +501,7 @@
                         {step === 'unauthorized' && (
                             <div className="bg-white p-12 rounded-[4rem] shadow-sm border-4 border-rose-100 max-w-md mx-auto mt-20 text-center animate-in zoom-in duration-500 font-black text-black font-black font-black font-black">
                                 <div className="text-6xl mb-8 font-black font-black">🚫</div><h2 className="text-3xl font-black text-rose-400 mb-6 tracking-tighter font-black font-black">身分核對失敗</h2>
-                                <p className="text-slate-400 font-bold mb-10 leading-relaxed font-black font-black">您的 Google 名稱「<span className="text-rose-600 font-black font-black">{user?.displayName}</span>」不在目前的幹部名單中。</p>
+                                <p className="text-slate-400 font-bold mb-10 leading-relaxed font-black font-black">您的 Google 帳號「<span className="text-rose-600 font-black font-black">{user?.email}</span>」不在名單中。<br/><br/>請確認是否使用了註冊時的 Email 登入。</p>
                                 <button onClick={handleLogout} className="w-full bg-slate-100 py-6 rounded-[2.5rem] font-black text-slate-400 hover:bg-slate-200 transition-all text-lg active:scale-95 font-black font-black">登出更換帳號</button>
                             </div>
                         )}
