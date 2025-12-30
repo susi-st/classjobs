@@ -48,8 +48,8 @@
         const auth = firebase.auth();
         const db = firebase.firestore();
         
-        const appId = "class-officer-system";
-        const TEACHER_EMAIL = "susi@st.tc.edu.tw";
+        // 移除強制 Email 檢查，方便測試
+        // const TEACHER_EMAIL = "susi@st.tc.edu.tw";
 
         const ROLE_ORDER = [
             "班長", "副班長", "風紀1", "風紀2", "學藝1", "學藝2", "設備1", "設備2",
@@ -97,9 +97,9 @@
                 const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
                     if (currentUser) {
                         setUser(currentUser);
-                        if (currentUser.email === TEACHER_EMAIL) {
-                            if (loginIntent === 'teacher' || step === 'admin') setStep('admin');
-                            else await checkStudentIdentity(currentUser);
+                        // 如果是從「教師入口」登入，直接進入後台 (略過 Email 檢查)
+                        if (loginIntent === 'teacher' || step === 'admin') {
+                            setStep('admin');
                         } else {
                             await checkStudentIdentity(currentUser);
                         }
@@ -114,22 +114,21 @@
 
             const checkStudentIdentity = async (currentUser) => {
                 try {
-                    const snap = await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('member_list').get();
+                    const snap = await db.collection('member_list').get();
                     const list = snap.docs.map(d => d.data());
                     const matched = list.find(o => o.name === currentUser.displayName);
                     if (matched) {
                         setUserData(matched);
                         loadUserResponse(currentUser.uid);
-                    } else if (currentUser.email !== TEACHER_EMAIL) {
-                        setStep('unauthorized');
                     } else {
-                        setStep('admin');
+                        // 學生身分不符
+                        setStep('unauthorized');
                     }
                 } catch (e) { console.error(e); }
             };
 
             const loadUserResponse = (uid) => {
-                db.collection('artifacts').doc(appId).collection('users').doc(uid).collection('data').doc('responses').onSnapshot((docSnap) => {
+                db.collection('responses').doc(uid).onSnapshot((docSnap) => {
                     if (docSnap.exists) {
                         const data = docSnap.data();
                         setUserResponse(prev => ({
@@ -148,20 +147,23 @@
             // 監聽幹部名單
             useEffect(() => {
                 if (!user) return;
-                const unsub = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('member_list').onSnapshot((snapshot) => {
+                const unsub = db.collection('member_list').onSnapshot((snapshot) => {
                     const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                     data.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
                     setOfficers(data);
                     if (editList.length === 0 && data.length > 0) {
                         setEditList(data.map(item => ({ seatNo: item.seatNo, role: item.role, name: item.name })));
                     }
+                }, (err) => {
+                    if (loginIntent === 'teacher') console.warn("名單讀取權限警告:", err);
                 });
                 return () => unsub();
             }, [user, editList.length]);
 
+            // 監聽所有回應
             useEffect(() => {
                 if (!user) return;
-                const unsub = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('responses_summary').onSnapshot((snap) => {
+                const unsub = db.collection('responses').onSnapshot((snap) => {
                     setAllStudentResponses(snap.docs.map(d => ({ uid: d.id, ...d.data() })));
                 });
                 return () => unsub();
@@ -216,7 +218,7 @@
                 try {
                     await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
                 } catch (error) { 
-                    setModal({ show: true, title: '登入失敗', message: '無法開啟 Google 登入視窗。', type: 'error' });
+                    setModal({ show: true, title: '登入失敗', message: '無法開啟 Google 登入視窗。請確認是否在 Firebase 授權了 GitHub 網域。', type: 'error' });
                 }
             };
 
@@ -225,11 +227,8 @@
             const saveToDB = async () => {
                 setIsActionLoading(true); setModal({show:false});
                 try {
-                    const data = { ...userResponse, isSubmitted: true, lastUpdated: new Date().toISOString() };
-                    await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('data').doc('responses').set(data, { merge: true });
-                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('responses_summary').doc(user.uid).set({
-                        seatNo: userData?.seatNo || "??", name: user.displayName, evaluations: userResponse.evaluations, preferences: userResponse.preferences, lastUpdated: new Date().toISOString()
-                    });
+                    const data = { ...userResponse, isSubmitted: true, lastUpdated: new Date().toISOString(), name: user.displayName };
+                    await db.collection('responses').doc(user.uid).set(data, { merge: true });
                     setStep('summary');
                 } catch (e) { 
                     setModal({ show: true, title: '儲存失敗', message: '發生錯誤：' + e.message, type: 'error' });
@@ -256,21 +255,19 @@
             };
 
             const parseAndSaveList = async () => {
-                if (user.email !== TEACHER_EMAIL) return alert("權限不足。");
+                // 移除 Email 檢查，允許任何教師入口登入者寫入
                 setIsActionLoading(true);
                 try {
                     const batch = db.batch();
-                    const col = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('member_list');
+                    const col = db.collection('member_list');
                     const snap = await col.get(); 
                     snap.docs.forEach(d => batch.delete(d.ref));
                     
-                    // 決定要儲存的資料來源：如果是手動模式用 editList，貼上模式則解析 textarea
                     let listToSave = [];
                     if (isAdminMode === 'paste') {
                         const lines = pasteContent.split('\n').filter(l => l.trim());
                         listToSave = lines.map(l => {
                             const p = l.split(/\t|\s+/).filter(x => x); 
-                            // 簡單檢核：如果切分後不是3欄，或是第一欄(座號)不是數字，就跳過
                             if (p.length >= 3 && !isNaN(p[0])) {
                                 return { seatNo: p[0], role: p[1], name: p[2] };
                             }
@@ -281,7 +278,7 @@
                     }
 
                     if (listToSave.length === 0) {
-                        throw new Error("沒有有效的名單資料可供儲存。請檢查格式是否為「座號 職務 姓名」。");
+                        throw new Error("沒有有效的名單資料。");
                     }
 
                     listToSave.forEach((o) => { 
@@ -297,8 +294,8 @@
                     
                     await batch.commit(); 
                     alert("名單儲存成功！");
-                    setPasteContent(''); // 清空貼上區
-                    setEditList([]); // 清空編輯區以觸發重新讀取
+                    setPasteContent(''); 
+                    setEditList([]); 
                     setAdminTab('progress'); 
                 } catch (err) {
                     setModal({ show: true, title: '儲存失敗', message: `錯誤：${err.message}`, type: 'error' });
@@ -309,12 +306,13 @@
 
             return (
                 <div className="min-h-screen pb-10 bg-[#FFFAF0]">
+                    {/* 彈窗 UI */}
                     {modal.show && (
                         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-[100] p-4 text-center text-black">
                             <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-sm w-full border-4 border-white">
                                 <div className="p-8">
                                     <h3 className={`text-2xl font-black mb-2 ${modal.type === 'error' ? 'text-rose-500' : 'text-[#8799E8]'}`}>{modal.title}</h3>
-                                    <p className="text-slate-500 font-bold text-sm leading-relaxed">{modal.message}</p>
+                                    <p className="text-slate-500 font-bold text-sm leading-relaxed whitespace-pre-wrap">{modal.message}</p>
                                 </div>
                                 <div className="p-6 pt-0 flex gap-3">
                                     {modal.onConfirm ? (
@@ -356,7 +354,7 @@
                         </div>
                     )}
 
-                    <header className="bg-white/70 backdrop-blur-md p-6 sticky top-0 z-10 border-b border-white">
+                    <header className="bg-white/70 backdrop-blur-md p-6 sticky top-0 z-10 border-b border-white text-center">
                         <div className="max-w-7xl mx-auto flex justify-between items-center text-black">
                             <h1 className="text-xl sm:text-2xl font-black text-[#8799E8] flex items-center gap-2">❤️ 班級幹部票選系統</h1>
                             {user && (
@@ -395,8 +393,13 @@
                                 <div className="bg-white p-8 sm:p-10 rounded-[4rem] border-4 border-white shadow-sm min-h-[400px]">
                                     {adminTab === 'list' && (
                                         <div>
-                                            <div className="flex justify-between items-center mb-6"><h3 className="text-2xl font-black text-slate-700 font-black text-black">幹部名單管理</h3><button onClick={() => setIsAdminMode(isAdminMode==='manual'?'paste':'manual')} className="text-xs font-bold text-indigo-400 underline">切換匯入模式</button></div>
-                                            {isAdminMode === 'paste' ? <textarea value={pasteContent} onChange={(e)=>setPasteContent(e.target.value)} className="w-full h-48 bg-[#FFFAF0] rounded-3xl p-6 font-bold outline-none mb-4 border-2 border-transparent focus:border-[#C7CEEA] text-black font-black" placeholder="請貼上：座號 職務 姓名" /> : (
+                                            <div className="flex justify-between items-center mb-6"><h3 className="text-2xl font-black text-slate-700 font-black text-black">幹部名單管理</h3>
+                                                <div className="text-right">
+                                                    <span className="text-xs font-black text-slate-400 block mb-1">目前登入：{user.email}</span>
+                                                    <button onClick={() => setIsAdminMode(isAdminMode==='manual'?'paste':'manual')} className="text-xs font-bold text-indigo-400 underline">切換匯入模式</button>
+                                                </div>
+                                            </div>
+                                            {isAdminMode === 'paste' ? <textarea value={pasteContent} onChange={(e)=>setPasteContent(e.target.value)} className="w-full h-48 bg-[#FFFAF0] rounded-3xl p-6 font-bold outline-none mb-4 border-2 border-transparent focus:border-[#C7CEEA] text-black font-black" placeholder="座號 職務 姓名" /> : (
                                                 <div className="space-y-2">{editList.map((row, idx) => (
                                                     <div key={idx} className="flex gap-2 items-center text-black font-black"><input type="number" value={row.seatNo} onChange={(e)=>{const n=[...editList]; n[idx].seatNo=e.target.value; setEditList(n);}} className="w-16 p-3 bg-slate-50 rounded-2xl font-bold text-center text-sm" /><input type="text" value={row.role} onChange={(e)=>{const n=[...editList]; n[idx].role=e.target.value; setEditList(n);}} className="flex-1 p-3 bg-slate-50 rounded-2xl font-bold text-sm" /><input type="text" value={row.name} onChange={(e)=>{const n=[...editList]; n[idx].name=e.target.value; setEditList(n);}} className="flex-1 p-3 bg-slate-50 rounded-2xl font-bold text-sm" /><button onClick={()=>setEditList(editList.filter((_,i)=>i!==idx))} className="text-rose-300 font-black px-3 text-xl hover:text-rose-500">×</button></div>
                                                 ))}<button onClick={()=>setEditList([...editList,{seatNo:'',role:'',name:''}])} className="text-xs font-bold text-indigo-400 mt-2 p-2 font-black">+ 增加欄位</button></div>
@@ -470,7 +473,7 @@
                         )}
 
                         {step === 'unauthorized' && (
-                            <div className="bg-white p-12 rounded-[4rem] shadow-sm border-4 border-rose-100 max-w-md mx-auto mt-20 text-center animate-in zoom-in duration-500 font-black text-black font-black font-black">
+                            <div className="bg-white p-12 rounded-[4rem] shadow-sm border-4 border-rose-100 max-w-md mx-auto mt-20 text-center animate-in zoom-in duration-500 font-black text-black font-black font-black font-black">
                                 <div className="text-6xl mb-8 font-black font-black">🚫</div><h2 className="text-3xl font-black text-rose-400 mb-6 tracking-tighter font-black font-black">身分核對失敗</h2>
                                 <p className="text-slate-400 font-bold mb-10 leading-relaxed font-black font-black">您的 Google 名稱「<span className="text-rose-600 font-black font-black">{user?.displayName}</span>」不在目前的幹部名單中。</p>
                                 <button onClick={handleLogout} className="w-full bg-slate-100 py-6 rounded-[2.5rem] font-black text-slate-400 hover:bg-slate-200 transition-all text-lg active:scale-95 font-black font-black">登出更換帳號</button>
