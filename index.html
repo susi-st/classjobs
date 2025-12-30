@@ -4,8 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>班級幹部票選系統</title>
-    <!-- 優先載入樣式，避免畫面閃爍 -->
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM CDN -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel CDN -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Firebase SDKs (Compat 版本) -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
         body { font-family: 'Noto Sans TC', sans-serif; overflow-x: hidden; }
@@ -15,48 +24,14 @@
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .battery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(8px, 1fr)); gap: 2px; width: 100%; }
         .battery-cell { height: 12px; border-radius: 2px; }
-
-        /* 靜態載入動畫：在 React 啟動前顯示 */
-        #static-loader {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background-color: #FFFAF0; z-index: 9999;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            transition: opacity 0.5s ease-out;
-        }
-        .spinner {
-            width: 50px; height: 50px; border: 5px solid #E2E8F0;
-            border-top-color: #8799E8; border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .hidden-loader { opacity: 0; pointer-events: none; }
     </style>
 </head>
 <body class="bg-[#FFFAF0] text-slate-700">
-    
-    <!-- 靜態載入畫面 -->
-    <div id="static-loader">
-        <div class="spinner"></div>
-        <div class="mt-4 text-[#8799E8] font-bold text-xl animate-pulse">系統啟動中...</div>
+    <div id="root">
+        <div class="min-h-screen flex items-center justify-center font-bold text-[#8799E8] animate-pulse">系統啟動中...</div>
     </div>
 
-    <div id="root"></div>
-
-    <!-- 延後載入大型函式庫，加快首屏顯示 -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-
     <script type="text/babel">
-        // 移除 Loading 遮罩
-        setTimeout(() => {
-            const loader = document.getElementById('static-loader');
-            if(loader) loader.classList.add('hidden-loader');
-        }, 1500);
-
         const { useState, useEffect, useMemo } = React;
 
         // --- Firebase 初始化 ---
@@ -83,7 +58,6 @@
             "禮貌2", "圖書1", "圖書2", "腳踏車1", "腳踏車2"
         ];
 
-        // 職務正規化：去掉尾端數字 (如 風紀1 -> 風紀)
         const normalizeRole = (roleName) => roleName ? roleName.toString().replace(/\d+$/, '').trim() : "";
 
         const RATING_OPTIONS = [
@@ -96,8 +70,7 @@
 
         function App() {
             const [user, setUser] = useState(null);
-            // 這裡的 loading 設為 false，因為我們已經有靜態 loader 了
-            const [loading, setLoading] = useState(false); 
+            const [loading, setLoading] = useState(true);
             const [userData, setUserData] = useState(null);
             const [step, setStep] = useState('login'); 
             const [loginIntent, setLoginIntent] = useState(null); 
@@ -137,16 +110,15 @@
                         setUser(null);
                         setStep('login');
                     }
+                    setLoading(false);
                 });
                 return () => unsubscribe();
             }, [loginIntent]);
 
-            // 身分驗證 (Email)
             const checkStudentIdentity = async (currentUser) => {
                 try {
                     const snap = await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('member_list').get();
                     const list = snap.docs.map(d => d.data());
-                    // 關鍵修改：比對 Email
                     const matched = list.find(o => o.email === currentUser.email);
                     if (matched) {
                         setUserData(matched);
@@ -181,22 +153,18 @@
                 if (!user) return;
                 const unsub = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('member_list').onSnapshot((snapshot) => {
                     const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                    // 預設依座號排序
                     data.sort((a, b) => Number(a.seatNo) - Number(b.seatNo));
                     setOfficers(data);
                     
-                    // 編輯列表初始化 (依座號排序)
                     if (editList.length === 0 && data.length > 0) {
-                        const sorted = [...data].sort((a, b) => Number(a.seatNo) - Number(b.seatNo));
-                        setEditList(sorted.map(item => ({ 
+                        setEditList(data.map(item => ({ 
                             seatNo: item.seatNo, 
-                            role: item.originalRole || item.role, 
+                            role: item.role, 
                             name: item.name, 
                             email: item.email || ""
                         })));
                     }
 
-                    // 計算可選職務 (去除重複、正規化)
                     const uniqueRoleTypes = [...new Set(ROLE_ORDER.map(r => normalizeRole(r)))];
                     setAvailableRoles(uniqueRoleTypes.filter(r => !(userResponse.preferences || []).includes(r)));
                 });
@@ -211,9 +179,9 @@
                 return () => unsub();
             }, [user]);
 
-            // 排序後的名單 (給進度頁用，依座號)
             const officersSortedBySeat = useMemo(() => [...officers].sort((a, b) => Number(a.seatNo || 0) - Number(b.seatNo || 0)), [officers]);
 
+            // 修正統計邏輯：鍵值正規化
             const statistics = useMemo(() => {
                 let incEval = 0, incPref = 0;
                 officers.forEach(s => {
@@ -221,15 +189,18 @@
                     if (!r || Object.keys(r.evaluations || {}).length < officers.length) incEval++;
                     if (!r || (r.preferences || []).filter(p => p).length < 5) incPref++;
                 });
+                
                 const roleStats = {};
-                // 使用正規化後的職務名稱作為 Key
-                [...new Set(ROLE_ORDER.map(r => normalizeRole(r)))].forEach(role => roleStats[role] = { r1: 0, r2: 0, r3: 0 });
+                // 初始化使用正規化後的職務名稱
+                const uniqueTypes = [...new Set(ROLE_ORDER.map(r => normalizeRole(r)))];
+                uniqueTypes.forEach(role => roleStats[role] = { r1: 0, r2: 0, r3: 0 });
                 
                 allStudentResponses.forEach(r => {
                     const p = r.preferences || [];
-                    if (p[0] && roleStats[normalizeRole(p[0])]) roleStats[normalizeRole(p[0])].r1++;
-                    if (p[1] && roleStats[normalizeRole(p[1])]) roleStats[normalizeRole(p[1])].r2++;
-                    if (p[2] && roleStats[normalizeRole(p[2])]) roleStats[normalizeRole(p[2])].r3++;
+                    // 填答時已正規化，直接累加
+                    if (p[0] && roleStats[p[0]]) roleStats[p[0]].r1++;
+                    if (p[1] && roleStats[p[1]]) roleStats[p[1]].r2++;
+                    if (p[2] && roleStats[p[2]]) roleStats[p[2]].r3++;
                 });
                 return { incEval, incPref, roleStats };
             }, [allStudentResponses, officers]);
@@ -243,6 +214,24 @@
                 });
                 return stats;
             }, [allStudentResponses, officers]);
+
+            // 修正：VolunteerStats 也需要使用正規化鍵值
+            const volunteerStats = useMemo(() => {
+                const stats = {};
+                const uniqueTypes = [...new Set(ROLE_ORDER.map(r => normalizeRole(r)))];
+                uniqueTypes.forEach(role => stats[role] = []);
+
+                allStudentResponses.forEach(resp => {
+                    const prefs = resp.preferences || [];
+                    prefs.forEach((role, idx) => {
+                        // 職務名稱在儲存時已正規化，直接使用
+                        if (role && stats[role] !== undefined) {
+                            stats[role].push({ name: resp.name, seatNo: resp.seatNo, rank: idx + 1 });
+                        }
+                    });
+                });
+                return stats;
+            }, [allStudentResponses]);
 
             const awardList = useMemo(() => {
                 const list = [];
@@ -337,7 +326,6 @@
                         const lines = pasteContent.split('\n').filter(l => l.trim());
                         listToSave = lines.map(l => {
                             const p = l.split(/\t|\s+/).filter(x => x); 
-                            // 判斷欄位數：座號(0) 職務(1) 姓名(2) Email(3)
                             if (p.length >= 4 && !isNaN(p[0])) {
                                 return { seatNo: p[0], role: p[1], name: p[2], email: p[3] };
                             }
@@ -356,17 +344,14 @@
                         if (o.name && o.role) { 
                             const newDoc = col.doc(); 
                             const order = ROLE_ORDER.indexOf(o.role);
-                            
-                            // 修正：去除姓名中的括號備註
                             const cleanName = o.name.split('(')[0].trim(); 
-                            // 修正：去除職務中的數字
-                            const cleanRole = normalizeRole(o.role);
+                            const cleanRole = normalizeRole(o.role); 
 
                             batch.set(newDoc, { 
                                 seatNo: Number(o.seatNo), 
-                                role: cleanRole, // 寫入去數字的職務
-                                originalRole: o.role, // 保留原始職務
-                                name: cleanName, // 寫入乾淨的姓名
+                                role: cleanRole, 
+                                originalRole: o.role, 
+                                name: cleanName, 
                                 email: (o.email || "").trim(),
                                 orderIndex: order === -1 ? 999 : order 
                             }); 
@@ -382,6 +367,8 @@
                     setModal({ show: true, title: '儲存失敗', message: `錯誤：${err.message}`, type: 'error' });
                 } finally { setIsActionLoading(false); }
             };
+
+            if (loading) return <div className="min-h-screen flex items-center justify-center font-black animate-pulse bg-[#FFFAF0] text-[#8799E8] text-2xl">系統載入中...</div>;
 
             return (
                 <div className="min-h-screen pb-10 bg-[#FFFAF0]">
@@ -487,7 +474,7 @@
                                                 const r = allStudentResponses.find(res => String(res.seatNo) === String(student.seatNo));
                                                 const hEval = r && Object.keys(r.evaluations || {}).length >= officers.length;
                                                 const hPref = r && (r.preferences || []).filter(p => p).length >= 5;
-                                                return (<tr key={student.id} className="bg-slate-50/50 hover:bg-white rounded-2xl transition-all"><td className="py-4 pl-4 text-center font-black"><span className="bg-white w-10 h-10 rounded-full flex items-center justify-center border shadow-sm mx-auto">{student.seatNo}</span></td><td className="py-4 text-lg font-black">{student.name}</td><td className="py-4"><div className="flex gap-2 justify-center font-black"><div className={`px-5 py-2 rounded-2xl text-[10px] ${hEval ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-300'}`}>評分</div><div className={`px-5 py-2 rounded-2xl text-[10px] ${hPref ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-300'}`}>志願</div></div></td><td className="py-4 text-right pr-4 text-[10px] text-slate-300 font-bold">{r?.lastUpdated ? new Date(r.lastUpdated).toLocaleTimeString() : '-'}</td></tr>);
+                                                return (<tr key={student.id} className="bg-slate-50/50 hover:bg-white rounded-2xl transition-all"><td className="py-4 pl-4 text-center font-black"><span className="bg-white w-10 h-10 rounded-full flex items-center justify-center border shadow-sm mx-auto">{student.seatNo}</span></td><td className="py-4 text-lg font-black">{student.name}</td><td className="py-4"><div className="flex gap-2 justify-center font-black"><div className={`px-5 py-2 rounded-2xl text-[10px] ${hEval ? 'bg-emerald-100 text-emerald-600 font-bold text-white' : 'bg-slate-100 text-slate-300'}`}>評分</div><div className={`px-5 py-2 rounded-2xl text-[10px] ${hPref ? 'bg-emerald-100 text-emerald-600 font-bold text-white' : 'bg-slate-100 text-slate-300'}`}>志願</div></div></td><td className="py-4 text-right pr-4 text-[10px] text-slate-300 font-bold">{r?.lastUpdated ? new Date(r.lastUpdated).toLocaleTimeString() : '-'}</td></tr>);
                                             }) : <tr><td colSpan="4" className="py-20 text-center text-slate-300 font-black italic text-black font-black">目前名單為空，請儲存新名單。</td></tr>}
                                         </tbody></table></div>
                                     )}
