@@ -34,28 +34,24 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useCallback } = React;
 
-        // --- Firebase 安全初始化 (遵循 RULE 1 & 3) ---
-        let auth, db, appId, initStatus = "ok";
+        // --- Firebase 安全初始化 (遵循環境規範) ---
+        let auth, db, appId;
         const TEACHER_EMAIL = "susi@st.tc.edu.tw";
 
         try {
+            // 直接由環境注入設定
             const firebaseConfig = typeof __firebase_config !== 'undefined' 
                 ? JSON.parse(__firebase_config) 
                 : { apiKey: "" };
 
-            if (!firebaseConfig.apiKey) {
-                initStatus = "config-missing";
-            } else {
-                if (!firebase.apps.length) {
-                    firebase.initializeApp(firebaseConfig);
-                }
-                auth = firebase.auth();
-                db = firebase.firestore();
+            if (!firebase.apps.length) {
+                firebase.initializeApp(firebaseConfig);
             }
+            auth = firebase.auth();
+            db = firebase.firestore();
             appId = (typeof __app_id !== 'undefined' && __app_id) ? __app_id : "class-officer-system";
         } catch (e) {
             console.error("Firebase Initialization Error:", e);
-            initStatus = "error";
         }
 
         const ROLE_ORDER = [
@@ -73,7 +69,6 @@
         function App() {
             const [user, setUser] = useState(null);
             const [loading, setLoading] = useState(true);
-            const [systemError, setSystemError] = useState(initStatus === "ok" ? null : initStatus);
             const [userData, setUserData] = useState(null);
             const [step, setStep] = useState('login'); 
             const [modal, setModal] = useState({ show: false, title: '', message: '', type: 'info', onConfirm: null });
@@ -101,6 +96,7 @@
                         return;
                     }
 
+                    // 依據 RULE 1 路徑讀取
                     const path = `artifacts/${appId}/public/data/member_list`;
                     const snap = await db.collection(path).get();
                     const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -136,23 +132,18 @@
 
             // --- 啟動與 Auth 監聽 (RULE 3) ---
             useEffect(() => {
-                // 如果初始化失敗，直接停止載入
-                if (systemError || !auth) {
+                if (!auth) {
                     setLoading(false);
                     return;
                 }
 
-                // 安全超時：5秒後強行解除載入畫面
-                const timeoutId = setTimeout(() => {
-                    setLoading(false);
-                    if (!user) console.warn("System load timeout - proceeding anyway.");
-                }, 5000);
-
                 const initAuth = async () => {
                     try {
+                        // 優先使用環境提供的 Token
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                             await auth.signInWithCustomToken(__initial_auth_token);
                         } else {
+                            // 嘗試 Redirect
                             try {
                                 await auth.getRedirectResult();
                             } catch (e) {
@@ -168,7 +159,6 @@
                         console.warn("Auth init failed:", e.message);
                     } finally {
                         setLoading(false);
-                        clearTimeout(timeoutId);
                     }
                 };
 
@@ -185,20 +175,17 @@
                         setStep('login');
                     }
                     setLoading(false);
-                    clearTimeout(timeoutId);
                 });
 
-                return () => {
-                    unsub();
-                    clearTimeout(timeoutId);
-                };
-            }, [verifyIdentity, systemError]);
+                return () => unsub();
+            }, [verifyIdentity]);
 
             useEffect(() => {
                 const interval = setInterval(() => setRefreshTick(p => p + 1), 20000);
                 return () => clearInterval(interval);
             }, []);
 
+            // 監聽資料
             useEffect(() => {
                 if (!user || !db) return;
                 const path = `artifacts/${appId}/public/data/member_list`;
@@ -209,9 +196,7 @@
                     if (editList.length === 0 && data.length > 0) {
                         setEditList(data.map(i => ({ seatNo: i.seatNo, role: i.role, name: i.name, email: i.email })));
                     }
-                }, err => {
-                    console.error("List listener error:", err);
-                });
+                }, err => console.error("List listener error:", err));
                 return () => unsub();
             }, [user]);
 
@@ -229,7 +214,7 @@
                     setModal({ 
                         show: true, 
                         title: '環境限制', 
-                        message: '目前的預覽環境不支援 Google 登入。請使用下方的「模擬驗證模式」輸入 Email 測試。', 
+                        message: '目前環境限制了 Google 彈出視窗。請使用下方的模擬驗證功能測試。', 
                         type: 'info' 
                     });
                     return;
@@ -281,7 +266,7 @@
                     });
                     setStep('summary');
                 } catch (e) {
-                    setModal({ show: true, title: '儲存失敗', message: "權限錯誤。若在預覽環境，請確認名單已正確上傳。", type: 'error' });
+                    setModal({ show: true, title: '儲存失敗', message: "權限錯誤或網路連線異常。", type: 'error' });
                 } finally { setIsActionLoading(false); }
             };
 
@@ -322,26 +307,13 @@
                 return stats;
             }, [allStudentResponses, officers]);
 
-            // --- 載入與錯誤介面 ---
             if (loading) return (
                 <div className="min-h-screen flex flex-col items-center justify-center bg-[#FFFAF0] text-[#8799E8] p-10">
                     <div className="text-2xl font-black animate-pulse mb-4">系統啟動中...</div>
-                    <div className="text-xs text-slate-300 font-bold">正在連接資料庫，請稍候。</div>
+                    <div className="text-xs text-slate-300 font-bold">正在連接雲端服務，請稍候。</div>
                 </div>
             );
 
-            if (systemError) return (
-                <div className="min-h-screen flex flex-col items-center justify-center bg-rose-50 text-rose-500 p-10 text-center">
-                    <div className="text-5xl mb-6">⚠️</div>
-                    <h2 className="text-2xl font-black mb-4">系統初始化失敗</h2>
-                    <p className="max-w-md text-sm font-bold leading-relaxed mb-8">
-                        {systemError === "config-missing" ? "找不到 Firebase 設定檔，請確認環境變數是否正確注入。" : "連線至資料庫時發生未知的錯誤。"}
-                    </p>
-                    <button onClick={() => window.location.reload()} className="px-10 py-4 bg-rose-500 text-white rounded-2xl font-black shadow-lg">重新嘗試</button>
-                </div>
-            );
-
-            // --- 主介面 ---
             return (
                 <div className="min-h-screen pb-10">
                     {modal.show && (
@@ -360,7 +332,7 @@
                             <h1 className="text-xl font-black text-indigo-500">幹部票選系統</h1>
                         </div>
                         {userData && (
-                            <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-4 text-black">
                                 <div className="text-right">
                                     <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{userData.role}</div>
                                     <div className="text-sm font-black text-slate-700 font-black">{userData.name}</div>
@@ -378,22 +350,22 @@
                                 <div className="login-card bg-white p-12 rounded-[3.5rem] shadow-xl border-t-8 border-indigo-400 text-center flex flex-col items-center">
                                     <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center text-4xl mb-6">🎒</div>
                                     <h2 className="text-3xl font-black text-slate-800 mb-4">學生入口</h2>
-                                    <p className="text-slate-400 font-bold mb-8 text-sm">點選下方按鈕使用 Google 帳號登入進行評價。</p>
+                                    <p className="text-slate-400 font-bold mb-8 text-sm">請使用您的 Google 帳號登入系統。</p>
                                     <button onClick={handleGoogleLogin} disabled={isActionLoading} className="w-full bg-indigo-500 text-white py-5 rounded-2xl font-black shadow-lg hover:bg-indigo-600 transition-all font-black">
                                         Google 登入
                                     </button>
                                 </div>
                                 <div className="login-card bg-white p-12 rounded-[3.5rem] shadow-xl border-t-8 border-emerald-400 text-center flex flex-col items-center">
-                                    <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center text-4xl mb-6 font-black font-black">👩‍🏫</div>
-                                    <h2 className="text-3xl font-black text-slate-800 mb-4 font-black">教師管理</h2>
-                                    <p className="text-slate-400 font-bold mb-8 text-sm font-black">管理學生名單、檢視評分統計與志願排名。</p>
+                                    <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center text-4xl mb-6 font-black">👩‍🏫</div>
+                                    <h2 className="text-3xl font-black text-slate-800 mb-4 font-black font-black">教師管理</h2>
+                                    <p className="text-slate-400 font-bold mb-8 text-sm font-black">管理名單、統計結果與志願排名。</p>
                                     <button onClick={handleGoogleLogin} disabled={isActionLoading} className="w-full bg-emerald-500 text-white py-5 rounded-2xl font-black shadow-lg hover:bg-emerald-600 transition-all font-black font-black">
                                         管理員登入
                                     </button>
                                 </div>
                                 {isUnsupportedEnv && (
                                     <div className="col-span-full bg-amber-50 border-2 border-amber-200 p-8 rounded-[2.5rem] text-center font-black">
-                                        <p className="text-amber-700 text-xs font-black mb-4">偵測到環境協定限制，請使用模擬驗證模式測試功能：</p>
+                                        <p className="text-amber-700 text-xs font-black mb-4">目前環境受限，請輸入 Email 模擬驗證測試：</p>
                                         <div className="flex gap-2 max-w-sm mx-auto font-black font-black font-black">
                                             <input type="email" placeholder="Email" className="flex-1 p-3 rounded-xl border border-amber-200" value={mockEmail} onChange={e=>setMockEmail(e.target.value)} />
                                             <button onClick={handleMockLogin} className="bg-amber-500 text-white px-6 py-3 rounded-xl font-black font-black">模擬登入</button>
@@ -423,11 +395,11 @@
                                                         <input type="text" value={row.role} onChange={e=>{const n=[...editList]; n[idx].role=e.target.value; setEditList(n);}} className="flex-1 p-2 bg-slate-50 rounded-lg text-xs font-black" />
                                                         <input type="text" value={row.name} onChange={e=>{const n=[...editList]; n[idx].name=e.target.value; setEditList(n);}} className="flex-1 p-2 bg-slate-50 rounded-lg text-xs font-black" />
                                                         <input type="text" value={row.email} onChange={e=>{const n=[...editList]; n[idx].email=e.target.value; setEditList(n);}} className="flex-1 p-2 bg-slate-50 rounded-lg text-xs font-black" />
-                                                        <button onClick={()=>setEditList(editList.filter((_,i)=>i!==idx))} className="text-rose-300 font-black font-black font-black">✕</button>
+                                                        <button onClick={()=>setEditList(editList.filter((_,i)=>i!==idx))} className="text-rose-300 font-black">✕</button>
                                                     </div>
                                                 ))}<button onClick={()=>setEditList([...editList,{seatNo:'',role:'',name:'',email:''}])} className="text-xs text-indigo-400 font-black">+ 新增</button></div>
                                             )}
-                                            <button onClick={parseAndSaveList} disabled={isActionLoading} className="w-full py-4 bg-indigo-500 text-white rounded-2xl font-black shadow-lg">更新名單資料</button>
+                                            <button onClick={parseAndSaveList} disabled={isActionLoading} className="w-full py-4 bg-indigo-500 text-white rounded-2xl font-black shadow-lg">更新資料庫名單</button>
                                         </div>
                                     )}
                                     {adminTab === 'progress' && (
@@ -444,8 +416,8 @@
                                     {adminTab === 'ratings' && (
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             {officers.map(off => (
-                                                <div key={off.id} className="p-4 bg-slate-50 rounded-2xl font-black">
-                                                    <div className="flex justify-between font-black text-sm mb-2 font-black font-black font-black"><span>{off.role} {off.name}</span></div>
+                                                <div key={off.id} className="p-4 bg-slate-50 rounded-2xl font-black font-black font-black">
+                                                    <div className="flex justify-between font-black text-sm mb-2"><span>{off.role} {off.name}</span></div>
                                                     <div className="flex h-5 bg-white rounded-lg overflow-hidden border">
                                                         {RATING_OPTIONS.map(opt => {
                                                             const count = ratingStats[off.id]?.counts[opt.val] || 0;
@@ -457,7 +429,7 @@
                                         </div>
                                     )}
                                     {adminTab === 'volunteers' && (
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-black">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-black font-black">
                                             {ROLE_ORDER.map(role => {
                                                 const v = [];
                                                 allStudentResponses.forEach(r => {
@@ -467,7 +439,7 @@
                                                 return <div key={role} className="p-4 bg-slate-50 rounded-2xl">
                                                     <div className="font-black border-b border-white pb-2 mb-2 flex justify-between font-black">{role} <span className="text-indigo-400 font-black">{v.length}</span></div>
                                                     <div className="flex flex-wrap gap-1 font-black">
-                                                        {v.sort((a,b)=>a.rank-b.rank).map((s,i) => <span key={i} className={`text-[9px] px-2 py-1 rounded shadow-sm ${s.rank <= 3 ? 'bg-indigo-500 text-white font-black' : 'bg-white font-black font-black font-black'}`}>{s.name} ({s.rank})</span>)}
+                                                        {v.sort((a,b)=>a.rank-b.rank).map((s,i) => <span key={i} className={`text-[9px] px-2 py-1 rounded shadow-sm ${s.rank <= 3 ? 'bg-indigo-500 text-white font-black' : 'bg-white font-black'}`}>{s.name} ({s.rank})</span>)}
                                                     </div>
                                                 </div>
                                             })}
@@ -478,27 +450,27 @@
                         )}
 
                         {step === 'eval' && (
-                            <div className="bg-white p-8 rounded-[3rem] shadow-xl border-2 animate-fade-in text-black font-black">
-                                <h2 className="text-2xl font-black mb-8 text-center text-indigo-500">幹部表現滿意度評價</h2>
+                            <div className="bg-white p-8 rounded-[3rem] shadow-xl border-2 animate-fade-in text-black font-black font-black">
+                                <h2 className="text-2xl font-black mb-8 text-center text-indigo-500">幹部表現評價</h2>
                                 <div className="space-y-4">{officers.map(off => (
                                     <div key={off.id} className="p-5 bg-slate-50 rounded-[2rem] flex flex-col lg:flex-row justify-between items-center gap-4">
-                                        <div className="text-center lg:text-left"><div className="text-xl font-black text-indigo-600 font-black">{off.role}</div><div className="text-xs font-bold text-slate-400 font-black font-black font-black">{off.name} (座號 {off.seatNo})</div></div>
+                                        <div className="text-center lg:text-left font-black"><div className="text-xl font-black text-indigo-600 font-black">{off.role}</div><div className="text-xs font-bold text-slate-400 font-black font-black font-black">{off.name} (座號 {off.seatNo})</div></div>
                                         <div className="flex bg-white rounded-2xl p-1 shadow-sm overflow-x-auto no-scrollbar max-w-full">
                                             {RATING_OPTIONS.map(opt => (
                                                 <button key={opt.val} onClick={() => setUserResponse({...userResponse, evaluations: {...userResponse.evaluations, [off.id]: opt.val}})}
-                                                    className={`px-5 py-3 rounded-xl text-xs font-black transition-all whitespace-nowrap ${userResponse.evaluations[off.id] === opt.val ? `${opt.activeColor} text-white shadow-lg font-black` : `${opt.color} text-slate-500 opacity-60 font-black font-black font-black`}`}>{opt.label}</button>
+                                                    className={`px-5 py-3 rounded-xl text-xs font-black transition-all whitespace-nowrap ${userResponse.evaluations[off.id] === opt.val ? `${opt.activeColor} text-white shadow-lg font-black` : `${opt.color} text-slate-500 opacity-60 font-black`}`}>{opt.label}</button>
                                             ))}
                                         </div>
                                     </div>
                                 ))}</div>
-                                <div className="mt-10 flex justify-end font-black font-black font-black font-black"><button onClick={() => setStep('pref')} className="px-12 py-5 bg-indigo-500 text-white rounded-full font-black shadow-xl">下一步：填寫新志願</button></div>
+                                <div className="mt-10 flex justify-end font-black"><button onClick={() => setStep('pref')} className="px-12 py-5 bg-indigo-500 text-white rounded-full font-black shadow-xl font-black">下一步：志願選填</button></div>
                             </div>
                         )}
 
                         {step === 'pref' && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-fade-in text-black font-black font-black font-black font-black">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-fade-in text-black font-black font-black">
                                 <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border-2 h-fit md:sticky md:top-28">
-                                    <h3 className="font-black mb-6 text-indigo-400">下學期可選職務</h3>
+                                    <h3 className="font-black mb-6 text-indigo-400 font-black font-black">可選職務</h3>
                                     <div className="flex flex-wrap gap-2 font-black">
                                         {ROLE_ORDER.filter(r => !userResponse.preferences.includes(r)).map(role => (
                                             <button key={role} onClick={() => {
@@ -507,41 +479,41 @@
                                                     const n = [...userResponse.preferences]; n[idx] = role;
                                                     setUserResponse({...userResponse, preferences: n});
                                                 }
-                                            }} className="px-4 py-2 bg-white border rounded-xl font-bold text-xs hover:bg-indigo-50 font-black font-black font-black">+ {role}</button>
+                                            }} className="px-4 py-2 bg-white border rounded-xl font-bold text-xs hover:bg-indigo-50 font-black font-black">+ {role}</button>
                                         ))}
                                     </div>
                                 </div>
-                                <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border-2 font-black font-black font-black">
+                                <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border-2 font-black">
                                     <h3 className="font-black mb-6">志願排序 (前 5 名必填)</h3>
-                                    <div className="space-y-2 font-black">{userResponse.preferences.map((p, i) => (
-                                        <div key={i} className={`p-4 rounded-2xl flex justify-between items-center ${i < 5 ? 'bg-indigo-50/50 border border-indigo-100 font-black' : 'bg-slate-50 font-black'}`}>
-                                            <div className="flex items-center gap-4 font-black">
-                                                <span className={`w-8 h-8 flex items-center justify-center rounded-full text-white font-black text-[10px] ${i < 5 ? 'bg-indigo-400 font-black' : 'bg-slate-300 font-black'}`}>{i + 1}</span>
+                                    <div className="space-y-2 font-black font-black">{userResponse.preferences.map((p, i) => (
+                                        <div key={i} className={`p-4 rounded-2xl flex justify-between items-center ${i < 5 ? 'bg-indigo-50/50 border border-indigo-100 font-black' : 'bg-slate-50'}`}>
+                                            <div className="flex items-center gap-4">
+                                                <span className={`w-8 h-8 flex items-center justify-center rounded-full text-white font-black text-[10px] ${i < 5 ? 'bg-indigo-400' : 'bg-slate-300'}`}>{i + 1}</span>
                                                 <span className="font-black text-lg">{p || '---'}</span>
                                             </div>
-                                            {p && <button onClick={() => {const n=[...userResponse.preferences]; n[i]=null; setUserResponse({...userResponse, preferences:n});}} className="text-rose-400 px-2 font-black font-black font-black">×</button>}
+                                            {p && <button onClick={() => {const n=[...userResponse.preferences]; n[i]=null; setUserResponse({...userResponse, preferences:n});}} className="text-rose-400 px-2 font-black font-black">×</button>}
                                         </div>
                                     ))}</div>
                                     <div className="mt-8 flex justify-between items-center font-black">
-                                        <button onClick={() => setStep('eval')} className="text-slate-400 underline font-bold text-sm font-black font-black font-black font-black">上一步</button>
-                                        <button onClick={saveResponses} disabled={isActionLoading} className="px-12 py-5 bg-emerald-500 text-white rounded-full font-black shadow-xl font-black font-black">送出志願結果</button>
+                                        <button onClick={() => setStep('eval')} className="text-slate-400 underline font-bold text-sm font-black">上一步</button>
+                                        <button onClick={saveResponses} disabled={isActionLoading} className="px-12 py-5 bg-emerald-500 text-white rounded-full font-black shadow-xl font-black">確認送出</button>
                                     </div>
                                 </div>
                             </div>
                         )}
 
                         {step === 'summary' && (
-                            <div className="max-w-md mx-auto bg-white p-16 rounded-[4rem] shadow-2xl text-center border-4 border-white text-black font-black font-black">
-                                <div className="text-7xl mb-8">✨</div><h2 className="text-3xl font-black mb-4 font-black">填答完成</h2><p className="text-slate-400 font-bold mb-10 font-black">感謝您的參與！</p>
-                                <button onClick={handleLogout} className="w-full py-4 bg-indigo-500 text-white rounded-2xl font-black font-black">登出並返回</button>
+                            <div className="max-w-md mx-auto bg-white p-16 rounded-[4rem] shadow-2xl text-center border-4 border-white text-black font-black">
+                                <div className="text-7xl mb-8">✨</div><h2 className="text-3xl font-black mb-4">填答完成</h2><p className="text-slate-400 font-bold mb-10">資料已成功送出。</p>
+                                <button onClick={handleLogout} className="w-full py-4 bg-indigo-500 text-white rounded-2xl font-black">登出系統</button>
                             </div>
                         )}
 
                         {step === 'unauthorized' && (
-                            <div className="max-w-md mx-auto bg-white p-12 rounded-[3rem] shadow-xl text-center border-t-8 border-rose-400 text-black font-black font-black">
-                                <div className="text-6xl mb-6">🛑</div><h3 className="text-2xl font-black text-rose-500 mb-4 font-black">驗證失敗</h3>
-                                <p className="text-slate-400 font-bold mb-10 text-sm font-black font-black">帳號不在名單內。若您剛修改過名單，請稍候再試或聯繫老師。</p>
-                                <button onClick={handleLogout} className="w-full py-4 bg-indigo-500 text-white rounded-2xl font-black font-black font-black font-black">重新登入</button>
+                            <div className="max-w-md mx-auto bg-white p-12 rounded-[3rem] shadow-xl text-center border-t-8 border-rose-400 text-black font-black">
+                                <div className="text-6xl mb-6">🛑</div><h3 className="text-2xl font-black text-rose-500 mb-4">身分驗證失敗</h3>
+                                <p className="text-slate-400 font-bold mb-10 text-sm">您的 Email 不在名單內，請聯繫老師。</p>
+                                <button onClick={handleLogout} className="w-full py-4 bg-indigo-500 text-white rounded-2xl font-black">重新登入</button>
                             </div>
                         )}
                     </main>
