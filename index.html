@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>班級幹部票選系統 v.108</title>
+    <title>班級幹部票選系統 v.110</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
@@ -86,7 +86,7 @@
 
         const normalizeRole = (r) => r ? r.toString().replace(/\d+$/, '').trim() : "";
 
-        // 初始化 Firebase
+        // Firebase Init
         const firebaseConfig = {
             apiKey: "AIzaSyDPue2Ac6K2QyZ3PI5gBAA9GcleCAlisNU",
             authDomain: "classjob-1d8bb.firebaseapp.com",
@@ -99,11 +99,202 @@
         const auth = firebase.auth();
         const db = firebase.firestore();
 
+        // ---------------- 子組件 ----------------
+
+        const NavBar = ({ step, setStep, userData, handleLogout }) => (
+            <header className="bg-white/80 backdrop-blur-md sticky top-0 z-50 border-b border-white h-24 sm:h-20 shadow-sm overflow-hidden">
+                <div className="max-w-[1400px] mx-auto h-full flex items-center px-6 relative">
+                    <h1 className="text-xl sm:text-2xl font-black text-[#8799E8] shrink-0">❤️ 班級幹部票選系統 <span className="text-xs opacity-40 ml-1 font-bold">v.110</span></h1>
+                    {userData && step !== 'admin' && step !== 'unauthorized' && (
+                        <nav className="absolute left-1/2 -translate-x-1/2 flex h-full items-center">
+                            <div onClick={() => setStep('eval')} className={`nav-item text-xs sm:text-sm ${step === 'eval' ? 'active' : 'text-slate-400'}`}>
+                                <div className="nav-bg bg-[#C7CEEA]"></div>現任幹部評分
+                            </div>
+                            <div onClick={() => setStep('pref')} className={`nav-item text-xs sm:text-sm ${step === 'pref' ? 'active' : 'text-slate-400'}`}>
+                                <div className="nav-bg bg-[#B5EAD7]"></div>下任幹部志願選填
+                            </div>
+                            <div onClick={() => setStep('summary')} className={`nav-item text-xs sm:text-sm ${step === 'summary' ? 'active' : 'text-slate-400'}`}>
+                                <div className="nav-bg bg-[#FFDAC1]"></div>查看選填結果
+                            </div>
+                        </nav>
+                    )}
+                    <div className="flex-1"></div>
+                    <div className="flex items-center gap-4 shrink-0">
+                        {userData?.name && <span className="hidden lg:block bg-lime-100 text-lime-700 px-4 py-1.5 rounded-full text-xs font-black">{userData.seatNo} 號 {userData.name}</span>}
+                        <button onClick={handleLogout} className="text-slate-400 font-bold px-3 py-1 border rounded-full hover:bg-slate-50 text-xs transition-colors">登出</button>
+                    </div>
+                </div>
+            </header>
+        );
+
+        const LoginView = ({ onLogin }) => (
+            <div className="flex flex-col md:flex-row gap-12 justify-center mt-12 animate-in fade-in font-black">
+                <div className="login-card flex-1 bg-white p-12 rounded-[4rem] shadow-xl border-t-8 border-[#C7CEEA] text-center max-w-sm">
+                    <div className="text-7xl mb-8">🎒</div><h2 className="text-4xl font-black text-slate-800 mb-6">學生入口</h2>
+                    <button onClick={() => onLogin('student')} className="w-full bg-[#C7CEEA] text-white py-6 rounded-3xl font-black shadow-lg text-xl">學生登入</button>
+                </div>
+                <div className="login-card flex-1 bg-white p-12 rounded-[4rem] shadow-xl border-t-8 border-[#B5EAD7] text-center max-w-sm">
+                    <div className="text-7xl mb-8">👩‍🏫</div><h2 className="text-4xl font-black text-slate-800 mb-6">教師入口</h2>
+                    <button onClick={() => onLogin('teacher')} className="w-full bg-[#B5EAD7] text-emerald-800 py-6 rounded-3xl font-black shadow-lg text-xl">教師管理</button>
+                </div>
+            </div>
+        );
+
+        const EvalView = ({ officers, userResponse, setUserResponse, validationErrors, setValidationErrors, onFinish }) => (
+            <div className="animate-in slide-in-from-bottom-6 duration-500 font-black text-black">
+                <div className="bg-white p-6 sm:p-10 rounded-[4rem] border-4 border-white mb-8 shadow-sm">
+                    <h2 className="text-3xl font-black mb-10 text-center text-[#8799E8]">⭐ 現任幹部評分</h2>
+                    <div className="space-y-6">
+                        {officers.map((off) => {
+                            const roleColorClass = ROLE_COLORS[ROLE_ORDER.indexOf(normalizeRole(off.role)) % ROLE_COLORS.length];
+                            const currentVal = userResponse.evaluations[off.seatNo];
+                            return (
+                                <div key={off.id} className={`flex flex-col lg:flex-row gap-0 p-4 rounded-[2.5rem] border-2 transition-all duration-300 ${validationErrors.includes(off.seatNo) ? 'error-row' : 'border-slate-50 hover:bg-white'}`}>
+                                    <div className="flex flex-col justify-center lg:w-44 shrink-0 pl-2 font-black">
+                                        <div className={`text-3xl font-black leading-tight mb-1 ${roleColorClass}`}>{off.role}</div>
+                                        <div className="text-sm font-bold text-slate-400">#{off.seatNo} {off.name}</div>
+                                    </div>
+                                    <div className="flex-1 mt-4 lg:mt-0 font-black">
+                                        <div className="flex items-stretch rounded-2xl border-2 border-white shadow-xl min-h-[75px] bg-white overflow-hidden">
+                                            {RATING_OPTIONS.map((opt, optIdx) => (
+                                                <button key={opt.val} 
+                                                        onClick={() => { setUserResponse({...userResponse, evaluations: {...userResponse.evaluations, [off.seatNo]: opt.val}}); setValidationErrors(prev => prev.filter(s => s !== off.seatNo)); }} 
+                                                        className={`health-segment flex-1 flex flex-col items-center justify-center px-4 border-r last:border-r-0 text-center leading-tight font-black py-1
+                                                                  ${optIdx === 0 ? 'rounded-l-2xl' : ''} ${optIdx === RATING_OPTIONS.length - 1 ? 'rounded-r-2xl' : ''}
+                                                                  ${currentVal === opt.val ? `${opt.activeColor} ${opt.activeText} z-10 shadow-inner scale-[1.02]` : `${opt.color} ${opt.textColor} opacity-90 hover:opacity-100`}`}>
+                                                    <span className="text-lg font-black">{opt.line1}</span>
+                                                    <span className="text-sm font-bold opacity-80">{opt.line2}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+                <div className="flex justify-end mb-20"><button onClick={onFinish} className="bg-[#B5EAD7] text-emerald-800 font-black py-6 px-20 rounded-full shadow-2xl border-4 border-white text-2xl hover:scale-105 active:scale-95 transition-all">完成</button></div>
+            </div>
+        );
+
+        const PrefView = ({ availableRoles, userResponse, handleDrop, setDraggedItem, onFinish }) => (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start animate-in fade-in duration-500 font-black text-black">
+                <div className="lg:col-span-4 bg-white p-8 rounded-[4rem] border-4 lg:sticky lg:top-28 shadow-xl text-center">
+                    <h3 className="text-xl font-black text-[#8799E8] mb-6">可選職務</h3>
+                    <div className="flex flex-wrap gap-3 p-6 bg-[#FFFAF0] rounded-[2.5rem] min-h-[200px] border-2 border-dashed font-black" onDragOver={(e)=>e.preventDefault()} onDrop={(e)=>handleDrop(e,'pool')}>
+                        {availableRoles.map(r => (
+                            <div key={r} draggable onDragStart={()=>setDraggedItem({type:'pool',value:r})} className="bg-white border-2 border-[#C7CEEA] px-6 py-3 rounded-2xl font-black text-base text-[#8799E8] shadow-sm flex items-center gap-2 cursor-grab hover:scale-105 transition-transform">⠿ {r}</div>
+                        ))}
+                    </div>
+                </div>
+                <div className="lg:col-span-8 bg-white p-12 rounded-[4rem] border-4 shadow-xl text-center font-black">
+                    <h3 className="text-2xl font-black mb-8 text-slate-800">下任幹部志願選填 (前 5 名必填)</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        {userResponse.preferences.map((p, i) => (
+                            <div key={i} onDragOver={(e)=>e.preventDefault()} onDrop={(e)=>handleDrop(e,'slot',i)} className={`flex items-center gap-5 p-6 rounded-[2.5rem] border-2 transition-all ${i < 5 ? 'bg-lime-50/50 border-lime-200 shadow-sm' : 'bg-[#FFFAF0] border-transparent'}`}>
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-white shrink-0 shadow-lg ${i < 5 ? 'bg-emerald-500' : 'bg-indigo-400'}`}>{i + 1}</div>
+                                <div className="flex-1 h-[60px] flex items-center overflow-hidden font-black">
+                                    {p ? <div draggable onDragStart={()=>setDraggedItem({type:'slot',value:p,index:i})} className="bg-white border-2 border-[#C7CEEA] px-6 py-4 rounded-[1.5rem] font-black text-xl text-[#8799E8] w-full flex justify-between items-center shadow-md"><span>{p}</span><span className="opacity-20 font-black">⠿</span></div> : <span className="text-slate-300 font-bold italic ml-3">尚未選入</span>}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+                <div className="lg:col-span-12 flex justify-end mt-12 mb-20 items-center px-4"><button onClick={onFinish} className="bg-[#B5EAD7] text-emerald-800 font-black py-6 px-20 rounded-full shadow-2xl border-4 border-white text-2xl hover:scale-105 active:scale-95 transition-all">完成</button></div>
+            </div>
+        );
+
+        const ResultView = ({ statistics, refreshTick }) => (
+            <div className="bg-white p-12 rounded-[5rem] border-4 border-white shadow-2xl text-center relative animate-in zoom-in duration-700 text-black font-black">
+                <div className="absolute top-8 right-10 flex items-center gap-2 uppercase text-[10px] text-slate-300"><div className={`w-2 h-2 rounded-full ${refreshTick % 2 === 0 ? 'bg-emerald-400 animate-ping' : 'bg-emerald-200'} `}></div>Live Updates</div>
+                <h2 className="text-5xl font-black text-slate-800 mb-8 tracking-tighter">選填結果✨</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12 font-black">
+                    <div className="bg-rose-50 p-8 rounded-[3rem] border-2 border-rose-100 font-black"><h4 className="text-rose-400 font-black text-lg mb-2">未完成評分</h4><div className="text-5xl font-black text-rose-600 font-black">{statistics.incEval}<span className="text-xl ml-2 opacity-50 font-black">人</span></div></div>
+                    <div className="bg-indigo-50 p-8 rounded-[3rem] border-2 border-indigo-100 font-black"><h4 className="text-indigo-400 font-black text-lg mb-2">未完成志願</h4><div className="text-5xl font-black text-indigo-600 font-black">{statistics.incPref}<span className="text-xl ml-2 opacity-50 font-black">人</span></div></div>
+                </div>
+                <div className="text-left space-y-8 font-black">
+                    <div className="flex justify-between border-b pb-4 items-end">
+                        <h3 className="text-xl font-black text-slate-700">各職務前三志願統計</h3>
+                        <div className="flex gap-4 text-[10px]">
+                            <div className="flex items-center gap-1 font-black"><div className="w-3 h-3 bg-rose-400 rounded-sm"></div> 1st</div>
+                            <div className="flex items-center gap-1 font-black"><div className="w-3 h-3 bg-amber-400 rounded-sm"></div> 2nd</div>
+                            <div className="flex items-center gap-1 font-black"><div className="w-3 h-3 bg-indigo-400 rounded-sm"></div> 3rd</div>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+                        {ROLE_ORDER.map(role => (
+                            <div key={role} className="flex flex-col gap-2 font-black">
+                                <div className="flex justify-between items-end px-1"><span className="font-black text-slate-600 text-lg">{role}</span><span className="text-[10px] text-slate-300">總計 {(statistics.roleStats[role]?.r1 || 0) + (statistics.roleStats[role]?.r2 || 0) + (statistics.roleStats[role]?.r3 || 0)}</span></div>
+                                <div className="battery-grid bg-slate-100 p-1.5 rounded-lg border border-slate-200/50">
+                                    {Array.from({length: statistics.roleStats[role]?.r1 || 0}).map((_, i) => <div key={`r1-${i}`} className="battery-cell bg-rose-400 shadow-sm"></div>)}
+                                    {Array.from({length: statistics.roleStats[role]?.r2 || 0}).map((_, i) => <div key={`r2-${i}`} className="battery-cell bg-amber-400 shadow-sm"></div>)}
+                                    {Array.from({length: statistics.roleStats[role]?.r3 || 0}).map((_, i) => <div key={`r3-${i}`} className="battery-cell bg-indigo-400 shadow-sm"></div>)}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        );
+
+        const AdminView = ({ adminTab, setAdminTab, officers, allStudentResponses, ratingStats, volunteerStats, topNFilter, setTopNFilter, setShowAwardModal, isAdminMode, setIsAdminMode, editList, setEditList, pasteContent, setPasteContent, parseAndSaveList, setStep }) => (
+            <div className="space-y-6 animate-in fade-in font-black text-black">
+                <div className="flex flex-wrap gap-2 items-center">
+                    {['list', 'progress', 'ratings', 'volunteers'].map(t => (
+                        <button key={t} onClick={() => { if(t === 'list') setIsAdminMode('manual'); setAdminTab(t); }} className={`px-6 py-3 rounded-2xl font-black text-sm transition ${adminTab === t ? 'bg-[#C7CEEA] text-white shadow-md' : 'bg-white text-slate-400 hover:bg-slate-50'}`}>{t === 'list' ? '名單設定' : t === 'progress' ? '填答進度' : t === 'ratings' ? '評分統計' : '志願統計'}</button>
+                    ))}
+                    <button onClick={() => setStep('eval')} className="ml-auto px-6 py-3 rounded-2xl font-black text-sm bg-orange-100 text-orange-600 border-2 border-white shadow-sm hover:scale-105 active:scale-95 transition-all">模擬填答指導 →</button>
+                </div>
+                <div className="bg-white p-8 rounded-[4rem] border-4 border-white shadow-sm min-h-[400px]">
+                    {adminTab === 'list' && (
+                        <div className="font-black">
+                            <div className="flex justify-between items-center mb-6"><h3 className="text-2xl font-black">名單管理</h3><button onClick={() => setIsAdminMode(isAdminMode==='manual'?'paste':'manual')} className="text-xs font-bold text-indigo-400 underline">{isAdminMode==='manual'?'切換匯入模式':'切換手動編輯'}</button></div>
+                            {isAdminMode === 'paste' ? <textarea value={pasteContent} onChange={(e)=>setPasteContent(e.target.value)} className="w-full h-48 bg-[#FFFAF0] rounded-3xl p-6 font-bold outline-none mb-4 border-2 border-transparent focus:border-[#C7CEEA] text-black" placeholder="格式：座號 職務 姓名 Email" /> : (
+                                <div className="space-y-2">{editList.map((row, idx) => (<div key={idx} className="flex gap-2 items-center font-black"><input type="number" value={row.seatNo} onChange={(e)=>{const n=[...editList]; n[idx].seatNo=e.target.value; setEditList(n);}} className="w-16 p-3 bg-slate-50 rounded-2xl font-bold text-center text-sm" /><input type="text" value={row.role} onChange={(e)=>{const n=[...editList]; n[idx].role=e.target.value; setEditList(n);}} className="flex-1 p-3 bg-slate-50 rounded-2xl font-bold text-sm" /><input type="text" value={row.name} onChange={(e)=>{const n=[...editList]; n[idx].name=e.target.value; setEditList(n);}} className="flex-1 p-3 bg-slate-50 rounded-2xl font-bold text-sm" /><input type="text" value={row.email} onChange={(e)=>{const n=[...editList]; n[idx].email=e.target.value; setEditList(n);}} className="flex-[1.5] p-3 bg-slate-50 rounded-2xl font-bold text-sm" placeholder="Email" /><button onClick={()=>setEditList(editList.filter((_,i)=>i!==idx))} className="text-rose-300 font-black px-3 text-xl">×</button></div>))}<button onClick={()=>setEditList([...editList,{seatNo:'',role:'',name:'',email:''}])} className="text-xs font-bold text-indigo-400 mt-2 p-2">+ 增加欄位</button></div>
+                            )}
+                            <button onClick={parseAndSaveList} className="w-full bg-[#B5EAD7] text-emerald-800 py-5 rounded-3xl font-black mt-6 shadow-lg active:scale-95 transition-all">儲存並重整系統</button>
+                        </div>
+                    )}
+                    {adminTab === 'progress' && (
+                        <div className="overflow-x-auto font-black"><table className="w-full text-left font-black border-separate border-spacing-y-2"><thead><tr className="text-slate-400 text-xs"><th>座號</th><th>姓名</th><th className="text-center font-black">狀態</th><th className="text-right pr-4">最後同步</th></tr></thead><tbody>
+                            {officers.map(s => {
+                                const r = allStudentResponses.find(res => String(res.seatNo) === String(s.seatNo));
+                                const hasEval = r && Object.keys(r.evaluations || {}).length >= officers.length;
+                                const hasPref = r && r.preferences?.filter(p=>p).length >= 5;
+                                return (<tr key={s.id} className="bg-slate-50/50 rounded-2xl font-black"><td className="py-4 pl-4 font-black">{s.seatNo}</td><td>{s.name}</td><td><div className="flex gap-2 justify-center font-black"><div className={`px-5 py-2 rounded-2xl text-[10px] font-black ${hasEval ? 'bg-emerald-600 text-white' : 'bg-slate-200'}`}>評分</div><div className={`px-5 py-2 rounded-2xl text-[10px] font-black ${hasPref ? 'bg-emerald-600 text-white' : 'bg-slate-200'}`}>志願</div></div></td><td className="py-4 text-right pr-4 text-[10px] text-slate-300 font-bold">{r?.lastUpdated ? new Date(r.lastUpdated).toLocaleTimeString() : '-'}</td></tr>);
+                            })}
+                        </tbody></table></div>
+                    )}
+                    {adminTab === 'ratings' && (
+                        <div className="space-y-6">
+                            <div className="flex justify-end mb-4 font-black"><button onClick={() => setShowAwardModal(true)} className="px-8 py-3 bg-rose-500 text-white rounded-2xl shadow-lg font-black">🎖️ 查看敘獎建議名單</button></div>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 text-black font-black">
+                                {officers.map(off => (<div key={off.id} className="bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2 shadow-sm font-black"><div className="flex items-center gap-2 mb-4 font-black"><span className="bg-[#C7CEEA] text-white text-[10px] px-3 py-1 rounded-full font-black">{off.seatNo}</span><span className="text-lg font-black">{off.name}</span> <span className="text-xs text-slate-400">({off.role})</span></div><div className="grid grid-cols-5 gap-1">{RATING_OPTIONS.map(opt => (<div key={opt.val} className={`p-2 rounded-xl flex flex-col items-center border border-white ${opt.color} font-black`}><span className="text-xl font-black">{ratingStats[String(off.seatNo)]?.counts[String(opt.val)] || 0}</span></div>))}</div></div>))}
+                            </div>
+                        </div>
+                    )}
+                    {adminTab === 'volunteers' && (
+                        <div className="space-y-8 animate-in fade-in font-black text-black">
+                            <div className="flex flex-col sm:flex-row justify-between items-center bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2 gap-4">
+                                <div><h4 className="font-black text-lg">志願統計累計篩選</h4><p className="text-xs text-slate-400 font-bold">顯示前 {topNFilter} 志願人選</p></div>
+                                <div className="flex gap-2 font-black">{[1, 2, 3, 4, 5].map(rank => (<button key={rank} onClick={() => setTopNFilter(rank)} className={`w-12 h-12 rounded-2xl font-black transition-all ${topNFilter === rank ? 'bg-indigo-500 text-white scale-110 shadow-lg' : 'bg-white text-slate-300 border'}`}>{rank}</button>))}</div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {ROLE_ORDER.map(role => {
+                                    const filtered = (volunteerStats[role] || []).filter(s => s.rank <= topNFilter).sort((a,b)=>a.rank-b.rank);
+                                    return (<div key={role} className="bg-slate-50 p-5 rounded-[2rem] border-2 min-h-[140px] font-black"><div className="font-black mb-3 flex justify-between border-b pb-2 text-lg font-black">{role}<span className="text-[10px] text-indigo-500 bg-white px-3 py-1 rounded-full">{filtered.length}</span></div><div className="flex flex-wrap gap-2">{filtered.map((s, i) => (<div key={i} className="bg-white px-3 py-1.5 rounded-xl text-xs font-black shadow-sm">#{s.seatNo} {s.name} <span className="text-indigo-600 font-black">({s.rank})</span></div>))}</div></div>);
+                                })}</div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+
         function App() {
             const [user, setUser] = useState(null);
             const [userData, setUserData] = useState(null);
             const [step, setStep] = useState('login'); 
-            const loginIntentRef = useRef(null); // 使用 ref 避免觸發重渲染
+            const loginIntentRef = useRef(null); 
             const [modal, setModal] = useState({ show: false, title: '', message: '', type: 'info', onConfirm: null });
             const [isActionLoading, setIsActionLoading] = useState(false);
             const [showAwardModal, setShowAwardModal] = useState(false); 
@@ -118,7 +309,6 @@
             const [editList, setEditList] = useState([]);
             const [isAdminMode, setIsAdminMode] = useState('manual');
             const [pasteContent, setPasteContent] = useState('');
-            const [availableRoles, setAvailableRoles] = useState([]);
             const [draggedItem, setDraggedItem] = useState(null);
 
             useEffect(() => {
@@ -126,7 +316,6 @@
                 return () => clearInterval(interval);
             }, []);
 
-            // 登入狀態監控 - 不依賴 loginIntent
             useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
                     if (currentUser) {
@@ -196,6 +385,8 @@
             useEffect(() => {
                 setAvailableRoles(ROLE_ORDER.filter(r => !(userResponse.preferences || []).includes(r)));
             }, [userResponse.preferences]);
+            
+            const [availableRoles, setAvailableRoles] = useState([]); 
 
             useEffect(() => {
                 if (!user) return;
@@ -205,86 +396,93 @@
                 return () => unsub();
             }, [user, refreshTick]);
 
-            const officersSortedBySeat = useMemo(() => [...officers].sort((a, b) => Number(a.seatNo) - Number(b.seatNo)), [officers]);
-
-            const officersSortedByRole = useMemo(() => {
-                return [...officers].sort((a, b) => {
-                    const idxA = ROLE_ORDER.indexOf(normalizeRole(a.role));
-                    const idxB = ROLE_ORDER.indexOf(normalizeRole(b.role));
-                    if (idxA !== idxB) return idxA - idxB;
-                    return Number(a.seatNo) - Number(b.seatNo);
+            const ratingStatsData = useMemo(() => {
+                const s = {}; 
+                officers.forEach(o => { s[String(o.seatNo)] = { name: o.name, role: o.role, seatNo: o.seatNo, counts: {"-1":0,"0":0,"1":0,"2":0,"3":0} }; });
+                allStudentResponses.forEach(r => {
+                    Object.entries(r.evaluations || {}).forEach(([sn, sc]) => { if (s[String(sn)]) s[String(sn)].counts[String(sc)]++; });
                 });
-            }, [officers]);
-
-            const ratingStats = useMemo(() => {
-                const stats = {};
-                officers.forEach(off => { stats[String(off.seatNo)] = { name: off.name, role: off.role, seatNo: off.seatNo, counts: { "-1": 0, "0": 0, "1": 0, "2": 0, "3": 0 } }; });
-                allStudentResponses.forEach(resp => {
-                    const evals = resp.evaluations || {};
-                    Object.entries(evals).forEach(([targetSeat, score]) => { 
-                        const key = String(targetSeat);
-                        if (stats[key]) stats[key].counts[String(score)]++; 
-                    });
-                });
-                return stats;
+                return s;
             }, [allStudentResponses, officers]);
 
-            const volunteerStats = useMemo(() => {
-                const stats = {};
-                ROLE_ORDER.forEach(role => stats[role] = []);
-                allStudentResponses.forEach(resp => {
-                    const prefs = resp.preferences || [];
-                    prefs.forEach((role, idx) => { if (role && stats[role] !== undefined) stats[role].push({ name: resp.name, seatNo: resp.seatNo, rank: idx + 1 }); });
-                });
-                return stats;
+            const volunteerStatsData = useMemo(() => {
+                const s = {}; ROLE_ORDER.forEach(r => s[r] = []);
+                allStudentResponses.forEach(r => { (r.preferences || []).forEach((ro, idx) => { if (ro && s[ro]) s[ro].push({name:r.name, seatNo:r.seatNo, rank:idx+1}); }); });
+                return s;
             }, [allStudentResponses]);
 
-            const awardList = useMemo(() => {
-                const list = [];
-                Object.values(ratingStats).forEach((info) => {
-                    const counts = info.counts;
-                    let maxVotes = 0, modeVal = null;
-                    ["3", "2", "1", "0", "-1"].forEach(val => {
-                        if (counts[val] > maxVotes) { maxVotes = counts[val]; modeVal = Number(val); }
+            const awardListData = useMemo(() => {
+                const l = []; 
+                let totalSystemVotes = 0;
+
+                Object.values(ratingStatsData).forEach(i => {
+                    const counts = i.counts;
+                    const totalVotesForOfficer = Object.values(counts).reduce((a, b) => a + b, 0);
+                    totalSystemVotes += totalVotesForOfficer;
+
+                    let mv = 0, mvv = null;
+                    let tiedScores = [];
+
+                    ["-1","0","1","2","3"].forEach(v => { 
+                        if (counts[v] > mv) { 
+                            mv = counts[v]; 
+                            tiedScores = [Number(v)]; 
+                        } else if (counts[v] === mv && mv > 0) {
+                            tiedScores.push(Number(v));
+                        }
                     });
-                    if (maxVotes > 0 && modeVal >= 1) {
-                        let desc = modeVal === 1 ? "嘉獎 1 次" : modeVal === 2 ? "嘉獎 2 次" : "小功 1 次";
-                        list.push({ seatNo: info.seatNo || "??", awardDesc: desc, role: info.role, name: info.name });
+
+                    let statusText = "目前無票數";
+                    let statusColor = "text-slate-400"; 
+
+                    if (mv > 0) {
+                        const sum = tiedScores.reduce((a, b) => a + b, 0);
+                        const avg = Math.ceil(sum / tiedScores.length);
+                        
+                        if (avg >= 3) { statusText = "小功 1 次"; statusColor = "text-indigo-600 font-bold"; }
+                        else if (avg === 2) { statusText = "嘉獎 2 次"; statusColor = "text-emerald-600 font-bold"; }
+                        else if (avg === 1) { statusText = "嘉獎 1 次"; statusColor = "text-amber-600 font-bold"; }
+                        else { statusText = "未達標準"; statusColor = "text-slate-500"; }
                     }
+
+                    l.push({ 
+                        seatNo: i.seatNo || "??", 
+                        name: i.name, 
+                        role: i.role, 
+                        awardDesc: statusText,
+                        colorClass: statusColor,
+                        rawMaxVotes: mv 
+                    });
                 });
-                return list.sort((a,b) => Number(a.seatNo) - Number(b.seatNo));
-            }, [ratingStats]);
+
+                if (totalSystemVotes === 0) return [];
+                return l.sort((a,b)=>a.seatNo-b.seatNo);
+            }, [ratingStatsData]);
 
             const statistics = useMemo(() => {
-                let incEval = 0, incPref = 0;
-                const validOfficers = officers.filter(o => o.name && o.role);
-                validOfficers.forEach(s => {
-                    const r = allStudentResponses.find(res => String(res.seatNo) === String(s.seatNo));
-                    const ratedCount = r ? Object.keys(r.evaluations || {}).length : 0;
-                    if (!r || ratedCount < validOfficers.length) incEval++;
-                    if (!r || (r.preferences || []).filter(p => p).length < 5) incPref++;
+                let ie = 0, ip = 0; 
+                const validOfficers = officers.filter(o=>o.name&&o.role);
+                validOfficers.forEach(o => {
+                    const r = allStudentResponses.find(x => String(x.seatNo) === String(o.seatNo));
+                    if (!r || Object.keys(r.evaluations||{}).length < validOfficers.length) ie++;
+                    if (!r || (r.preferences||[]).filter(x=>x).length < 5) ip++;
                 });
-                const roleStats = {};
-                ROLE_ORDER.forEach(role => roleStats[role] = { r1: 0, r2: 0, r3: 0 });
-                allStudentResponses.forEach(r => {
+                const rs = {}; ROLE_ORDER.forEach(r => rs[r] = {r1:0,r2:0,r3:0});
+                allStudentResponses.forEach(r => { 
                     const p = r.preferences || [];
-                    if (p[0] && roleStats[p[0]]) roleStats[p[0]].r1++;
-                    if (p[1] && roleStats[p[1]]) roleStats[p[1]].r2++;
-                    if (p[2] && roleStats[p[2]]) roleStats[p[2]].r3++;
+                    if(p[0] && rs[p[0]]) rs[p[0]].r1++; if(p[1] && rs[p[1]]) rs[p[1]].r2++; if(p[2] && rs[p[2]]) rs[p[2]].r3++;
                 });
-                return { incEval, incPref, roleStats };
+                return { incEval:ie, incPref:ip, roleStats:rs };
             }, [allStudentResponses, officers]);
 
             const handleGoogleLogin = async (mode) => {
-                loginIntentRef.current = mode; // 更新 ref
+                loginIntentRef.current = mode;
                 try { 
                     const provider = new firebase.auth.GoogleAuthProvider();
                     provider.setCustomParameters({ prompt: 'select_account' });
                     await auth.signInWithPopup(provider); 
                 } 
-                catch (error) { 
-                    setModal({ show: true, title: '登入失敗', message: `錯誤代碼: ${error.code}\n${error.message}`, type: 'error' }); 
-                }
+                catch (error) { setModal({ show: true, title: '登入失敗', message: `錯誤代碼: ${error.code}\n${error.message}`, type: 'error' }); }
             };
 
             const handleLogout = () => { auth.signOut(); setStep('login'); setUserData(null); loginIntentRef.current = null; };
@@ -308,6 +506,17 @@
                 setModal({ show: true, title: '確認儲存', message: "確定要送出目前的填答紀錄嗎？", type: 'info', onConfirm: saveToDB });
             };
 
+            const handleDrop = (e, targetType, targetIndex) => {
+                e.preventDefault(); if (!draggedItem) return;
+                const np = [...userResponse.preferences];
+                if (targetType === 'slot') {
+                    const ov = np[targetIndex];
+                    if (draggedItem.type === 'pool') { np[targetIndex] = draggedItem.value; }
+                    else { np[draggedItem.index] = ov; np[targetIndex] = draggedItem.value; }
+                } else if (targetType === 'pool' && draggedItem.type === 'slot') { np[draggedItem.index] = null; }
+                setUserResponse({...userResponse, preferences: np}); setDraggedItem(null);
+            };
+
             const saveToDB = async () => {
                 setIsActionLoading(true); setModal({show:false});
                 try {
@@ -321,17 +530,6 @@
                     setStep('summary');
                 } catch (e) { setModal({ show: true, title: '儲存失敗', message: '錯誤：' + e.message, type: 'error' }); } 
                 finally { setIsActionLoading(false); }
-            };
-
-            const handleDrop = (e, targetType, targetIndex) => {
-                e.preventDefault(); if (!draggedItem) return;
-                const np = [...userResponse.preferences];
-                if (targetType === 'slot') {
-                    const ov = np[targetIndex];
-                    if (draggedItem.type === 'pool') { np[targetIndex] = draggedItem.value; }
-                    else { np[draggedItem.index] = ov; np[targetIndex] = draggedItem.value; }
-                } else if (targetType === 'pool' && draggedItem.type === 'slot') { np[draggedItem.index] = null; }
-                setUserResponse({...userResponse, preferences: np}); setDraggedItem(null);
             };
 
             const parseAndSaveList = async () => {
@@ -358,248 +556,67 @@
                 } catch (err) { console.error(err); } finally { setIsActionLoading(false); }
             };
 
-            return (
-                <div className="min-h-screen pb-10 bg-[#FFFAF0] text-black">
-                    {/* 彈窗 UI */}
-                    {modal.show && (
-                        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-[100] p-4 text-center font-black">
-                            <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-sm w-full border-4 border-white p-6">
-                                <h3 className={`text-2xl mb-2 ${modal.type === 'error' ? 'text-rose-500' : 'text-[#8799E8]'}`}>{modal.title}</h3>
-                                <p className="text-slate-500 mb-6">{modal.message}</p>
-                                <div className="flex gap-3">
-                                    {modal.onConfirm ? (
-                                        <><button onClick={() => setModal({show:false})} className="flex-1 py-3 bg-slate-100 rounded-2xl text-slate-400">取消</button>
-                                        <button onClick={modal.onConfirm} className="flex-1 py-3 bg-[#B5EAD7] text-emerald-800 rounded-2xl">確定</button></>
-                                    ) : <button onClick={() => setModal({show:false})} className="w-full py-3 bg-[#C7CEEA] text-white rounded-2xl">知道了</button>}
-                                </div>
-                            </div>
-                        </div>
-                    )}
+            const officersSortedByRole = useMemo(() => {
+                return [...officers].sort((a, b) => {
+                    const idxA = ROLE_ORDER.indexOf(normalizeRole(a.role));
+                    const idxB = ROLE_ORDER.indexOf(normalizeRole(b.role));
+                    if (idxA !== idxB) return idxA - idxB;
+                    return Number(a.seatNo) - Number(b.seatNo);
+                });
+            }, [officers]);
 
-                    {/* 敘獎名單彈窗 */}
+            return (
+                <div className="min-h-screen pb-10 bg-[#FFFAF0] text-black font-black">
+                    <NavBar step={step} setStep={setStep} userData={userData} handleLogout={handleLogout} />
+                    <main className="max-w-6xl mx-auto p-4 mt-8 font-black">
+                        {step === 'login' && <LoginView onLogin={handleGoogleLogin} />}
+                        {step === 'admin' && <AdminView adminTab={adminTab} setAdminTab={setAdminTab} officers={officers} allStudentResponses={allStudentResponses} ratingStats={ratingStatsData} volunteerStats={volunteerStatsData} topNFilter={topNFilter} setTopNFilter={setTopNFilter} setShowAwardModal={setShowAwardModal} isAdminMode={isAdminMode} setIsAdminMode={setIsAdminMode} editList={editList} setEditList={setEditList} pasteContent={pasteContent} setPasteContent={setPasteContent} parseAndSaveList={parseAndSaveList} setStep={setStep} />}
+                        {step === 'eval' && <EvalView officers={officersSortedByRole} userResponse={userResponse} setUserResponse={setUserResponse} validationErrors={validationErrors} setValidationErrors={setValidationErrors} onFinish={handleEvalFinish} />}
+                        {step === 'pref' && <PrefView availableRoles={availableRoles} userResponse={userResponse} handleDrop={handleDrop} setDraggedItem={setDraggedItem} onFinish={handlePrefFinish} />}
+                        {step === 'summary' && <ResultView statistics={statistics} refreshTick={refreshTick} />}
+                        {step === 'unauthorized' && <div className="text-center mt-20 font-black"><h2 className="text-3xl text-rose-500 mb-6 font-black">🚫 身分核對失敗</h2><p>您的 Email 不在名單中。</p><button onClick={handleLogout} className="mt-8 bg-slate-200 px-10 py-3 rounded-full">登出</button></div>}
+                    </main>
+
                     {showAwardModal && (
-                        <div className="fixed inset-0 bg-black/40 backdrop-blur-md flex items-center justify-center z-[100] p-4 font-black">
-                            <div className="bg-white rounded-[3rem] shadow-2xl max-w-3xl w-full border-4 border-white max-h-[85vh] flex flex-col text-black">
+                        <div className="fixed inset-0 bg-black/40 backdrop-blur-md flex items-center justify-center z-[200] p-4 text-black font-black">
+                            <div className="bg-white rounded-[3rem] shadow-2xl max-w-3xl w-full border-4 border-white max-h-[85vh] flex flex-col font-black">
                                 <div className="p-8 text-center border-b font-black"><h3 className="text-3xl font-black text-indigo-700">🏅 敘獎建議名單</h3></div>
-                                <div className="flex-1 overflow-y-auto p-8 no-scrollbar">
+                                <div className="flex-1 overflow-y-auto p-8 no-scrollbar font-black">
                                     {awardList.length > 0 ? (
-                                        <table className="w-full text-left text-sm font-bold border-separate border-spacing-y-2">
-                                            <thead><tr className="text-slate-400 font-black"><th>座號</th><th>獎勵</th><th>現任職務</th><th>姓名</th></tr></thead>
+                                        <table className="w-full text-left text-sm font-bold border-separate border-spacing-y-2 font-black">
+                                            <thead><tr className="text-slate-400 font-black"><th>座號</th><th>獎勵狀態</th><th>現任職務</th><th>姓名</th></tr></thead>
                                             <tbody>
                                                 {awardList.map((a, i) => (
-                                                    <tr key={i} className="bg-[#FFFAF0] hover:bg-white rounded-xl transition-all">
-                                                        <td className="py-3 px-2 font-black">{a.seatNo}</td><td className="text-rose-500 font-black">{a.awardDesc}</td><td>{a.role}</td><td className="text-indigo-600 font-black">{a.name}</td>
+                                                    <tr key={i} className="bg-[#FFFAF0] rounded-xl transition-all font-black">
+                                                        <td className="py-3 px-2 font-black">{a.seatNo}</td>
+                                                        <td className={a.colorClass}>{a.awardDesc}</td>
+                                                        <td>{a.role}</td>
+                                                        <td className="text-indigo-600 font-black">{a.name}</td>
                                                     </tr>
                                                 ))}
                                             </tbody>
                                         </table>
-                                    ) : <div className="text-center py-20 text-slate-300 font-black italic">目前無人符合標準</div>}
+                                    ) : <div className="text-center py-20 text-slate-300 italic">目前無人投票</div>}
                                 </div>
                                 <div className="p-8 bg-slate-50 rounded-b-[3rem] flex justify-between gap-4 font-black">
-                                    <button onClick={() => setShowAwardModal(false)} className="flex-1 py-5 bg-white text-slate-400 font-black rounded-[2rem] border-2">返回</button>
-                                    <button onClick={() => { 
-                                        const text = awardList.map(a => `${a.seatNo}\t${a.name}\t${a.awardDesc}`).join("\n"); 
-                                        const el = document.createElement("textarea"); 
-                                        el.value = text; document.body.appendChild(el); el.select(); document.execCommand('copy'); document.body.removeChild(el); 
-                                        alert("已複製到剪貼簿！"); 
-                                    }} className="flex-[2] py-5 bg-[#B5EAD7] text-emerald-800 font-black rounded-[2rem] shadow-xl">📋 複製資料貼回 Excel</button>
+                                    <button onClick={() => setShowAwardModal(false)} className="flex-1 py-5 bg-white text-slate-400 rounded-[2rem] border-2">返回</button>
+                                    <button onClick={() => { const t = awardList.map(a => `${a.seatNo}\t${a.name}\t${a.awardDesc}`).join("\n"); const el = document.createElement("textarea"); el.value = t; document.body.appendChild(el); el.select(); document.execCommand('copy'); document.body.removeChild(el); alert("已複製！"); }} className="flex-[2] py-5 bg-[#B5EAD7] text-emerald-800 font-black rounded-[2rem] shadow-xl">📋 複製資料貼回 Excel</button>
                                 </div>
                             </div>
                         </div>
                     )}
-
-                    <header className="bg-white/80 backdrop-blur-md sticky top-0 z-50 border-b border-white h-24 sm:h-20 shadow-sm overflow-hidden">
-                        <div className="max-w-[1400px] mx-auto h-full flex items-center px-6 relative">
-                            <h1 className="text-xl sm:text-2xl font-black text-[#8799E8] shrink-0">❤️ 班級幹部票選系統 <span className="text-xs opacity-40 ml-1 font-bold">v.108</span></h1>
-                            {user && step !== 'login' && step !== 'admin' && step !== 'unauthorized' && (
-                                <nav className="absolute left-1/2 -translate-x-1/2 flex h-full items-center">
-                                    <div onClick={() => setStep('eval')} className={`nav-item text-xs sm:text-sm ${step === 'eval' ? 'active' : 'text-slate-400'}`}>
-                                        <div className="nav-bg bg-[#C7CEEA]"></div><span className="relative z-10">現任幹部評分</span>
-                                    </div>
-                                    <div onClick={() => setStep('pref')} className={`nav-item text-xs sm:text-sm ${step === 'pref' ? 'active' : 'text-slate-400'}`}>
-                                        <div className="nav-bg bg-[#B5EAD7]"></div><span className="relative z-10">下任幹部志願選填</span>
-                                    </div>
-                                    <div onClick={() => setStep('summary')} className={`nav-item text-xs sm:text-sm ${step === 'summary' ? 'active' : 'text-slate-400'}`}>
-                                        <div className="nav-bg bg-[#FFDAC1]"></div><span className="relative z-10">查看選填結果</span>
-                                    </div>
-                                </nav>
-                            )}
-                            <div className="flex-1"></div>
-                            {user && <div className="flex items-center gap-4 shrink-0">{userData && <span className="hidden lg:block bg-lime-100 text-lime-700 px-4 py-1.5 rounded-full text-xs font-black">{userData.seatNo} 號 {userData.name}</span>}<button onClick={handleLogout} className="text-slate-400 font-bold px-3 py-1 border rounded-full hover:bg-slate-50 text-xs transition-colors">登出</button></div>}
+                    
+                    {modal.show && (
+                        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-[300] p-4 text-center font-black">
+                            <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-sm w-full border-4 border-white p-6 font-black">
+                                <h3 className={`text-2xl mb-2 ${modal.type === 'error' ? 'text-rose-500' : 'text-[#8799E8]'}`}>{modal.title}</h3>
+                                <p className="text-slate-500 mb-6 font-black">{modal.message}</p>
+                                <div className="flex gap-3">
+                                    {modal.onConfirm ? (<><button onClick={() => setModal({show:false})} className="flex-1 py-3 bg-slate-100 rounded-2xl text-slate-400 font-black">取消</button><button onClick={modal.onConfirm} className="flex-1 py-3 bg-[#B5EAD7] text-emerald-800 rounded-2xl font-black">確定</button></>) : <button onClick={() => setModal({show:false})} className="w-full py-3 bg-[#C7CEEA] text-white rounded-2xl font-black">知道了</button>}
+                                </div>
+                            </div>
                         </div>
-                    </header>
-
-                    <main className="max-w-6xl mx-auto p-4 mt-8 font-black">
-                        {step === 'login' && (
-                            <div className="flex flex-col md:flex-row gap-12 justify-center mt-12 animate-in fade-in">
-                                <div className="login-card flex-1 bg-white p-12 rounded-[4rem] shadow-xl border-t-8 border-[#C7CEEA] text-center">
-                                    <div className="text-7xl mb-8">🎒</div><h2 className="text-4xl font-black text-slate-800 mb-6">學生入口</h2>
-                                    <button onClick={() => handleGoogleLogin('student')} className="w-full bg-[#C7CEEA] text-white py-6 rounded-3xl font-black shadow-lg text-xl">學生登入</button>
-                                </div>
-                                <div className="login-card flex-1 bg-white p-12 rounded-[4rem] shadow-xl border-t-8 border-[#B5EAD7] text-center">
-                                    <div className="text-7xl mb-8">👩‍🏫</div><h2 className="text-4xl font-black text-slate-800 mb-6">教師入口</h2>
-                                    <button onClick={() => handleGoogleLogin('teacher')} className="w-full bg-[#B5EAD7] text-emerald-800 py-6 rounded-3xl font-black shadow-lg text-xl">教師管理</button>
-                                </div>
-                            </div>
-                        )}
-
-                        {step === 'admin' && (
-                            <div className="space-y-6 animate-in fade-in">
-                                <div className="flex flex-wrap gap-2 items-center">
-                                    {['list', 'progress', 'ratings', 'volunteers'].map(t => (
-                                        <button key={t} onClick={() => { if(t === 'list') setIsAdminMode('manual'); setAdminTab(t); }} className={`px-6 py-3 rounded-2xl font-black text-sm transition ${adminTab === t ? 'bg-[#C7CEEA] text-white shadow-md' : 'bg-white text-slate-400 hover:bg-slate-50'}`}>{t === 'list' ? '名單設定' : t === 'progress' ? '填答進度' : t === 'ratings' ? '評分統計' : '志願統計'}</button>
-                                    ))}
-                                    <button onClick={() => setStep('eval')} className="ml-auto px-6 py-3 rounded-2xl font-black text-sm bg-orange-100 text-orange-600 border-2 border-white shadow-sm hover:scale-105 active:scale-95 transition-all">模擬填答指導 →</button>
-                                </div>
-                                <div className="bg-white p-8 rounded-[4rem] border-4 border-white shadow-sm min-h-[400px]">
-                                    {adminTab === 'list' && (
-                                        <div className="font-black text-black">
-                                            <div className="flex justify-between items-center mb-6"><h3 className="text-2xl font-black">名單管理</h3><button onClick={() => setIsAdminMode(isAdminMode==='manual'?'paste':'manual')} className="text-xs font-bold text-indigo-400 underline">{isAdminMode==='manual'?'切換匯入模式':'切換手動編輯'}</button></div>
-                                            {isAdminMode === 'paste' ? <textarea value={pasteContent} onChange={(e)=>setPasteContent(e.target.value)} className="w-full h-48 bg-[#FFFAF0] rounded-3xl p-6 font-bold outline-none mb-4 border-2 border-transparent focus:border-[#C7CEEA] text-black" placeholder="格式：座號 職務 姓名 Email" /> : (
-                                                <div className="space-y-2 font-black">{editList.map((row, idx) => (<div key={idx} className="flex gap-2 items-center font-black"><input type="number" value={row.seatNo} onChange={(e)=>{const n=[...editList]; n[idx].seatNo=e.target.value; setEditList(n);}} className="w-16 p-3 bg-slate-50 rounded-2xl font-bold text-center text-sm font-black" /><input type="text" value={row.role} onChange={(e)=>{const n=[...editList]; n[idx].role=e.target.value; setEditList(n);}} className="flex-1 p-3 bg-slate-50 rounded-2xl font-bold text-sm font-black" /><input type="text" value={row.name} onChange={(e)=>{const n=[...editList]; n[idx].name=e.target.value; setEditList(n);}} className="flex-1 p-3 bg-slate-50 rounded-2xl font-bold text-sm font-black" /><input type="text" value={row.email} onChange={(e)=>{const n=[...editList]; n[idx].email=e.target.value; setEditList(n);}} className="flex-[1.5] p-3 bg-slate-50 rounded-2xl font-bold text-sm" placeholder="Email" /><button onClick={()=>setEditList(editList.filter((_,i)=>i!==idx))} className="text-rose-300 font-black px-3 text-xl">×</button></div>))}<button onClick={()=>setEditList([...editList,{seatNo:'',role:'',name:'',email:''}])} className="text-xs font-bold text-indigo-400 mt-2 p-2">+ 增加欄位</button></div>
-                                            )}
-                                            <button onClick={parseAndSaveList} className="w-full bg-[#B5EAD7] text-emerald-800 py-5 rounded-3xl font-black mt-6 shadow-lg active:scale-95 transition-all">儲存並重整系統</button>
-                                        </div>
-                                    )}
-                                    {adminTab === 'progress' && (
-                                        <div className="overflow-x-auto font-black"><table className="w-full text-left font-black border-separate border-spacing-y-2"><thead><tr className="text-slate-400 text-xs"><th>座號</th><th>姓名</th><th className="text-center font-black">狀態</th><th className="text-right pr-4">最後同步</th></tr></thead><tbody>
-                                            {officers.map(s => {
-                                                const r = allStudentResponses.find(res => String(res.seatNo) === String(s.seatNo));
-                                                const hasEval = r && Object.keys(r.evaluations || {}).length >= officers.length;
-                                                const hasPref = r && r.preferences?.filter(p=>p).length >= 5;
-                                                return (<tr key={s.id} className="bg-slate-50/50 rounded-2xl font-black"><td className="py-4 pl-4 font-black">{s.seatNo}</td><td>{s.name}</td><td><div className="flex gap-2 justify-center font-black"><div className={`px-5 py-2 rounded-2xl text-[10px] font-black ${hasEval ? 'bg-emerald-600 text-white' : 'bg-slate-200'}`}>評分</div><div className={`px-5 py-2 rounded-2xl text-[10px] font-black ${hasPref ? 'bg-emerald-600 text-white' : 'bg-slate-200'}`}>志願</div></div></td><td className="py-4 text-right pr-4 text-[10px] text-slate-300 font-black">{r?.lastUpdated ? new Date(r.lastUpdated).toLocaleTimeString() : '-'}</td></tr>);
-                                            })}
-                                        </tbody></table></div>
-                                    )}
-                                    {adminTab === 'ratings' && (
-                                        <div className="space-y-6">
-                                            <div className="flex justify-end mb-4 font-black"><button onClick={() => setShowAwardModal(true)} className="px-8 py-3 bg-rose-500 text-white rounded-2xl shadow-lg font-black">🎖️ 查看敘獎建議名單</button></div>
-                                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 text-black font-black">
-                                                {officers.map(off => (<div key={off.id} className="bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2 shadow-sm font-black"><div className="flex items-center gap-2 mb-4 font-black"><span className="bg-[#C7CEEA] text-white text-[10px] px-3 py-1 rounded-full font-black">{off.seatNo}</span><span className="text-lg font-black">{off.name}</span> <span className="text-xs text-slate-400">({off.role})</span></div><div className="grid grid-cols-5 gap-1">{RATING_OPTIONS.map(opt => (<div key={opt.val} className={`p-2 rounded-xl flex flex-col items-center border border-white ${opt.color} font-black`}><span className="text-xl font-black">{ratingStats[String(off.seatNo)]?.counts[String(opt.val)] || 0}</span></div>))}</div></div>))}
-                                            </div>
-                                        </div>
-                                    )}
-                                    {adminTab === 'volunteers' && (
-                                        <div className="space-y-8 animate-in fade-in font-black text-black">
-                                            <div className="flex flex-col sm:flex-row justify-between items-center bg-[#FFFAF0] p-6 rounded-[2.5rem] border-2 gap-4">
-                                                <div><h4 className="font-black text-lg">志願統計累計篩選</h4><p className="text-xs text-slate-400 font-bold font-black">顯示前 {topNFilter} 志願人選</p></div>
-                                                <div className="flex gap-2 font-black">{[1, 2, 3, 4, 5].map(rank => (<button key={rank} onClick={() => setTopNFilter(rank)} className={`w-12 h-12 rounded-2xl font-black transition-all ${topNFilter === rank ? 'bg-indigo-500 text-white scale-110 shadow-lg' : 'bg-white text-slate-300 border font-black'}`}>{rank}</button>))}</div>
-                                            </div>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                                {ROLE_ORDER.map(role => {
-                                                    const filtered = (volunteerStats[role] || []).filter(s => s.rank <= topNFilter).sort((a,b)=>a.rank-b.rank);
-                                                    return (<div key={role} className="bg-slate-50 p-5 rounded-[2rem] border-2 min-h-[140px] font-black"><div className="font-black mb-3 flex justify-between border-b pb-2 text-lg font-black">{role}<span className="text-[10px] text-indigo-500 bg-white px-3 py-1 rounded-full">{filtered.length}</span></div><div className="flex flex-wrap gap-2">{filtered.map((s, i) => (<div key={i} className="bg-white px-3 py-1.5 rounded-xl text-xs font-black shadow-sm">#{s.seatNo} {s.name} <span className="text-indigo-600 font-black">({s.rank})</span></div>))}</div></div>);
-                                                })}</div>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-
-                        {step === 'eval' && (
-                            <div className="animate-in slide-in-from-bottom-6 duration-500 font-black text-black">
-                                <div className="bg-white p-6 sm:p-10 rounded-[4rem] border-4 border-white mb-8 shadow-sm">
-                                    <h2 className="text-3xl font-black mb-10 text-center text-[#8799E8]">⭐ 現任幹部評分</h2>
-                                    <div className="space-y-6">
-                                        {officersSortedByRole.map((off) => {
-                                            const roleColorClass = ROLE_COLORS[ROLE_ORDER.indexOf(normalizeRole(off.role)) % ROLE_COLORS.length];
-                                            return (
-                                                <div key={off.id} className={`flex flex-col lg:flex-row gap-0 p-4 rounded-[2.5rem] border-2 transition-all duration-300 ${validationErrors.includes(off.seatNo) ? 'error-row' : 'border-slate-50 hover:bg-white'}`}>
-                                                    <div className="flex flex-col justify-center lg:w-44 shrink-0 pl-2">
-                                                        <div className={`text-3xl font-black leading-tight mb-1 ${roleColorClass}`}>{off.role}</div>
-                                                        <div className="text-sm font-bold text-slate-400">#{off.seatNo} {off.name}</div>
-                                                    </div>
-                                                    <div className="flex-1 mt-4 lg:mt-0 font-black">
-                                                        <div className="flex items-stretch rounded-2xl border-2 border-white shadow-xl min-h-[75px] bg-white overflow-hidden">
-                                                            {RATING_OPTIONS.map((opt, optIdx) => (
-                                                                <button key={opt.val} 
-                                                                        onClick={() => { setUserResponse({...userResponse, evaluations: {...userResponse.evaluations, [off.seatNo]: opt.val}}); setValidationErrors(prev => prev.filter(s => s !== off.seatNo)); }} 
-                                                                        className={`health-segment flex-1 flex flex-col items-center justify-center px-4 border-r last:border-r-0 text-center leading-tight font-black py-1
-                                                                                  ${optIdx === 0 ? 'rounded-l-2xl' : ''} ${optIdx === RATING_OPTIONS.length - 1 ? 'rounded-r-2xl' : ''}
-                                                                                  ${userResponse.evaluations[off.seatNo] === opt.val ? `${opt.activeColor} ${opt.activeText} z-10 shadow-inner scale-[1.02] font-black` : `${opt.color} ${opt.textColor} opacity-90 hover:opacity-100`}`}>
-                                                                    <span className="text-lg font-black">{opt.line1}</span>
-                                                                    <span className="text-sm font-bold opacity-80">{opt.line2}</span>
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                                <div className="flex justify-end mb-20"><button onClick={handleEvalFinish} className="bg-[#B5EAD7] text-emerald-800 font-black py-6 px-20 rounded-full shadow-2xl border-4 border-white text-2xl hover:scale-105 active:scale-95 transition-all">完成</button></div>
-                            </div>
-                        )}
-
-                        {step === 'pref' && (
-                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start animate-in fade-in duration-500 font-black text-black">
-                                <div className="lg:col-span-4 bg-white p-8 rounded-[4rem] border-4 lg:sticky lg:top-28 shadow-xl text-center">
-                                    <h3 className="text-xl font-black text-[#8799E8] mb-6">可選職務</h3>
-                                    <div className="flex flex-wrap gap-3 p-6 bg-[#FFFAF0] rounded-[2.5rem] min-h-[200px] border-2 border-dashed font-black" onDragOver={(e)=>e.preventDefault()} onDrop={(e)=>handleDrop(e,'pool')}>
-                                        {availableRoles.map(r => (
-                                            <div key={r} draggable onDragStart={()=>setDraggedItem({type:'pool',value:r})} className="bg-white border-2 border-[#C7CEEA] px-6 py-3 rounded-2xl font-black text-base text-[#8799E8] shadow-sm flex items-center gap-2 cursor-grab hover:scale-105 transition-transform">⠿ {r}</div>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="lg:col-span-8 bg-white p-12 rounded-[4rem] border-4 shadow-xl text-center font-black">
-                                    <h3 className="text-2xl font-black mb-8 text-slate-800">下任幹部志願選填 (前 5 名必填)</h3>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                                        {userResponse.preferences.map((p, i) => (
-                                            <div key={i} onDragOver={(e)=>e.preventDefault()} onDrop={(e)=>handleDrop(e,'slot',i)} className={`flex items-center gap-5 p-6 rounded-[2.5rem] border-2 transition-all font-black ${i < 5 ? 'bg-lime-50/50 border-lime-200 shadow-sm font-black' : 'bg-[#FFFAF0] border-transparent font-black'}`}>
-                                                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-white shrink-0 shadow-lg ${i < 5 ? 'bg-emerald-500' : 'bg-indigo-400'}`}>{i + 1}</div>
-                                                <div className="flex-1 h-[60px] flex items-center overflow-hidden font-black">
-                                                    {p ? <div draggable onDragStart={()=>setDraggedItem({type:'slot',value:p,index:i})} className="bg-white border-2 border-[#C7CEEA] px-6 py-4 rounded-[1.5rem] font-black text-xl text-[#8799E8] w-full flex justify-between items-center shadow-md"><span>{p}</span><span className="opacity-20 font-black">⠿</span></div> : <span className="text-slate-300 font-bold italic ml-3">尚未選入</span>}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="lg:col-span-12 flex justify-end mt-12 mb-20 items-center px-4"><button onClick={handlePrefFinish} className="bg-[#B5EAD7] text-emerald-800 font-black py-6 px-20 rounded-full shadow-2xl border-4 border-white text-2xl hover:scale-105 active:scale-95 transition-all">完成</button></div>
-                            </div>
-                        )}
-
-                        {step === 'summary' && (
-                            <div className="bg-white p-12 rounded-[5rem] border-4 border-white shadow-2xl text-center relative animate-in zoom-in duration-700 text-black font-black">
-                                <div className="absolute top-8 right-10 flex items-center gap-2 uppercase text-[10px] text-slate-300"><div className={`w-2 h-2 rounded-full ${refreshTick % 2 === 0 ? 'bg-emerald-400 animate-ping' : 'bg-emerald-200'} `}></div>Live Updates</div>
-                                <h2 className="text-5xl font-black text-slate-800 mb-8 tracking-tighter">選填結果✨</h2>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12 font-black">
-                                    <div className="bg-rose-50 p-8 rounded-[3rem] border-2 border-rose-100 font-black"><h4 className="text-rose-400 font-black text-lg mb-2">未完成評分</h4><div className="text-5xl font-black text-rose-600 font-black">{statistics.incEval}<span className="text-xl ml-2 opacity-50 font-black">人</span></div></div>
-                                    <div className="bg-indigo-50 p-8 rounded-[3rem] border-2 border-indigo-100 font-black"><h4 className="text-indigo-400 font-black text-lg mb-2">未完成志願</h4><div className="text-5xl font-black text-indigo-600 font-black">{statistics.incPref}<span className="text-xl ml-2 opacity-50 font-black">人</span></div></div>
-                                </div>
-                                <div className="text-left space-y-8 font-black">
-                                    <div className="flex justify-between border-b pb-4 items-end">
-                                        <h3 className="text-xl font-black text-slate-700">各職務前三志願統計</h3>
-                                        <div className="flex gap-4 text-[10px]">
-                                            <div className="flex items-center gap-1 font-black"><div className="w-3 h-3 bg-rose-400 rounded-sm"></div> 1st</div>
-                                            <div className="flex items-center gap-1 font-black"><div className="w-3 h-3 bg-amber-400 rounded-sm"></div> 2nd</div>
-                                            <div className="flex items-center gap-1 font-black"><div className="w-3 h-3 bg-indigo-400 rounded-sm"></div> 3rd</div>
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-                                        {ROLE_ORDER.map(role => (
-                                            <div key={role} className="flex flex-col gap-2 font-black">
-                                                <div className="flex justify-between items-end px-1"><span className="font-black text-slate-600 text-lg">{role}</span><span className="text-[10px] text-slate-300">總計 {(statistics.roleStats[role]?.r1 || 0) + (statistics.roleStats[role]?.r2 || 0) + (statistics.roleStats[role]?.r3 || 0)}</span></div>
-                                                <div className="battery-grid bg-slate-100 p-1.5 rounded-lg border border-slate-200/50">
-                                                    {Array.from({length: statistics.roleStats[role]?.r1 || 0}).map((_, i) => <div key={`r1-${i}`} className="battery-cell bg-rose-400 shadow-sm"></div>)}
-                                                    {Array.from({length: statistics.roleStats[role]?.r2 || 0}).map((_, i) => <div key={`r2-${i}`} className="battery-cell bg-amber-400 shadow-sm"></div>)}
-                                                    {Array.from({length: statistics.roleStats[role]?.r3 || 0}).map((_, i) => <div key={`r3-${i}`} className="battery-cell bg-indigo-400 shadow-sm"></div>)}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {step === 'unauthorized' && (
-                            <div className="bg-white p-12 rounded-[4rem] shadow-xl border-4 border-rose-100 max-w-md mx-auto mt-20 text-center animate-in zoom-in font-black">
-                                <div className="text-7xl mb-8 font-black">🚫</div><h2 className="text-3xl font-black text-rose-500 mb-6 font-black">身分核對失敗</h2>
-                                <p className="text-slate-400 font-bold mb-10 leading-relaxed font-black">您的 Google Email「<span className="text-rose-600 font-black">{user?.email}</span>」不在目前的幹部名單中。</p>
-                                <button onClick={handleLogout} className="w-full bg-slate-100 py-6 rounded-[2.5rem] font-black text-slate-400 hover:bg-slate-200 transition-all text-lg font-black">登出更換帳號</button>
-                            </div>
-                        )}
-                    </main>
+                    )}
                 </div>
             );
         }
