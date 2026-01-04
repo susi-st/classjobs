@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>班級幹部票選系統 v.109</title>
+    <title>班級幹部票選系統 v.109 (Fixed)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
@@ -86,9 +86,20 @@
 
         const normalizeRole = (r) => r ? r.toString().replace(/\d+$/, '').trim() : "";
 
-        // ==========================================
-        // 子組件
-        // ==========================================
+        // Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyDPue2Ac6K2QyZ3PI5gBAA9GcleCAlisNU",
+            authDomain: "classjob-1d8bb.firebaseapp.com",
+            projectId: "classjob-1d8bb",
+            storageBucket: "classjob-1d8bb.firebasestorage.app",
+            messagingSenderId: "646890596544",
+            appId: "1:646890596544:web:07400ac216069e2531e525"
+        };
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        // ---------------- 子組件 ----------------
 
         const NavBar = ({ step, setStep, userData, handleLogout }) => (
             <header className="bg-white/80 backdrop-blur-md sticky top-0 z-50 border-b border-white h-24 sm:h-20 shadow-sm overflow-hidden">
@@ -279,9 +290,6 @@
             </div>
         );
 
-        // ==========================================
-        // 主程式 App
-        // ==========================================
         function App() {
             const [user, setUser] = useState(null);
             const [userData, setUserData] = useState(null);
@@ -303,25 +311,13 @@
             const [pasteContent, setPasteContent] = useState('');
             const [draggedItem, setDraggedItem] = useState(null);
 
-            // 1. 初始化
             useEffect(() => {
-                const firebaseConfig = {
-                    apiKey: "AIzaSyDPue2Ac6K2QyZ3PI5gBAA9GcleCAlisNU",
-                    authDomain: "classjob-1d8bb.firebaseapp.com",
-                    projectId: "classjob-1d8bb",
-                    storageBucket: "classjob-1d8bb.firebasestorage.app",
-                    messagingSenderId: "646890596544",
-                    appId: "1:646890596544:web:07400ac216069e2531e525"
-                };
-                if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-                
                 const interval = setInterval(() => setRefreshTick(p => p + 1), 10000);
                 return () => clearInterval(interval);
             }, []);
 
-            // 2. 登入監聽
             useEffect(() => {
-                const unsubscribe = firebase.auth().onAuthStateChanged(async (currentUser) => {
+                const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
                     if (currentUser) {
                         setUser(currentUser);
                         const intent = loginIntentRef.current;
@@ -342,7 +338,7 @@
 
             const checkStudentIdentity = async (currentUser) => {
                 try {
-                    const snap = await firebase.firestore().collection('artifacts').doc(appId).collection('public').doc('data').collection('member_list').get();
+                    const snap = await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('member_list').get();
                     const list = snap.docs.map(d => d.data());
                     const matched = list.find(o => o.email === currentUser.email);
                     if (matched) {
@@ -357,7 +353,7 @@
             };
 
             const loadUserResponse = (uid) => {
-                firebase.firestore().collection('artifacts').doc(appId).collection('users').doc(uid).collection('data').doc('responses').onSnapshot((docSnap) => {
+                db.collection('artifacts').doc(appId).collection('users').doc(uid).collection('data').doc('responses').onSnapshot((docSnap) => {
                     if (docSnap.exists) {
                         const data = docSnap.data();
                         setUserResponse(prev => ({
@@ -373,10 +369,9 @@
                 });
             };
 
-            // 3. 資料監聽
             useEffect(() => {
                 if (!user) return;
-                const unsub = firebase.firestore().collection('artifacts').doc(appId).collection('public').doc('data').collection('member_list').onSnapshot((snapshot) => {
+                const unsub = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('member_list').onSnapshot((snapshot) => {
                     const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                     data.sort((a, b) => Number(a.seatNo) - Number(b.seatNo));
                     setOfficers(data);
@@ -395,13 +390,12 @@
 
             useEffect(() => {
                 if (!user) return;
-                const unsub = firebase.firestore().collection('artifacts').doc(appId).collection('public').doc('data').collection('responses_summary').onSnapshot((snap) => {
+                const unsub = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('responses_summary').onSnapshot((snap) => {
                     setAllStudentResponses(snap.docs.map(d => ({ uid: d.id, ...d.data() })));
                 });
                 return () => unsub();
             }, [user, refreshTick]);
 
-            // 4. 統計計算
             const ratingStatsData = useMemo(() => {
                 const s = {}; 
                 officers.forEach(o => { s[String(o.seatNo)] = { name: o.name, role: o.role, seatNo: o.seatNo, counts: {"-1":0,"0":0,"1":0,"2":0,"3":0} }; });
@@ -417,7 +411,6 @@
                 return s;
             }, [allStudentResponses]);
 
-            // 核心修正：敘獎邏輯 (Rule 1, 2, 3)
             const awardListData = useMemo(() => {
                 const l = []; 
                 let totalSystemVotes = 0;
@@ -430,7 +423,6 @@
                     let maxVotes = 0;
                     let tiedScores = [];
 
-                    // 找出最高票 (允許同票)
                     ["-1","0","1","2","3"].forEach(v => { 
                         if (counts[v] > maxVotes) { 
                             maxVotes = counts[v]; 
@@ -444,7 +436,6 @@
                     let statusColor = "text-slate-400"; 
 
                     if (maxVotes > 0) {
-                        // Rule 3: 平均數無條件進位
                         const sum = tiedScores.reduce((a, b) => a + b, 0);
                         const avg = Math.ceil(sum / tiedScores.length);
                         
@@ -459,11 +450,11 @@
                         name: i.name, 
                         role: i.role, 
                         awardDesc: statusText,
-                        colorClass: statusColor
+                        colorClass: statusColor,
+                        rawMaxVotes: maxVotes
                     });
                 });
 
-                // Rule 1: 全班無票則回傳空
                 if (totalSystemVotes === 0) return [];
 
                 return l.sort((a,b)=>a.seatNo-b.seatNo);
@@ -485,18 +476,17 @@
                 return { incEval:ie, incPref:ip, roleStats:rs };
             }, [allStudentResponses, officers]);
 
-            // 事件處理
             const handleGoogleLogin = async (mode) => {
                 loginIntentRef.current = mode;
                 try { 
                     const provider = new firebase.auth.GoogleAuthProvider();
                     provider.setCustomParameters({ prompt: 'select_account' });
-                    await firebase.auth().signInWithPopup(provider); 
+                    await auth.signInWithPopup(provider); 
                 } 
                 catch (error) { setModal({ show: true, title: '登入失敗', message: `錯誤代碼: ${error.code}\n${error.message}`, type: 'error' }); }
             };
 
-            const handleLogout = () => { firebase.auth().signOut(); setStep('login'); setUserData(null); loginIntentRef.current = null; };
+            const handleLogout = () => { auth.signOut(); setStep('login'); setUserData(null); loginIntentRef.current = null; };
 
             const handleEvalFinish = () => {
                 const unrated = officers.filter(o => userResponse.evaluations[o.seatNo] === undefined || userResponse.evaluations[o.seatNo] === null);
@@ -534,8 +524,8 @@
                     const sn = userData?.name || user.displayName;
                     const sc = userData?.seatNo || "??";
                     const data = { ...userResponse, isSubmitted: true, lastUpdated: new Date().toISOString(), name: sn, seatNo: sc };
-                    await firebase.firestore().collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('data').doc('responses').set(data, { merge: true });
-                    await firebase.firestore().collection('artifacts').doc(appId).collection('public').doc('data').collection('responses_summary').doc(user.uid).set({
+                    await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('data').doc('responses').set(data, { merge: true });
+                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('responses_summary').doc(user.uid).set({
                         seatNo: sc, name: sn, evaluations: userResponse.evaluations, preferences: userResponse.preferences, lastUpdated: new Date().toISOString()
                     });
                     setStep('summary');
@@ -547,8 +537,8 @@
                 if (user.email !== TEACHER_EMAIL) return;
                 setIsActionLoading(true);
                 try {
-                    const batch = firebase.firestore().batch();
-                    const col = firebase.firestore().collection('artifacts').doc(appId).collection('public').doc('data').collection('member_list');
+                    const batch = db.batch();
+                    const col = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('member_list');
                     const snap = await col.get(); snap.docs.forEach(d => batch.delete(d.ref));
                     let listToSave = [];
                     if (isAdminMode === 'paste') {
